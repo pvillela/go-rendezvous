@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/pvillela/go-tryout/runconcurrent"
+	"github.com/pvillela/go-trygo2/runconcurrent"
 	"time"
 )
 
