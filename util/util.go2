@@ -1,4 +1,4 @@
-package errorof
+package util
 
 import "fmt"
 
@@ -17,4 +17,22 @@ func ErrorOfIfNeeded(x interface{}) error {
 	default:
 		return ErrorOf{x}
 	}
+}
+
+type Tuple2[T1 any, T2 any] struct {
+	X1 T1
+	X2 T2
+}
+
+type Tuple3[T1 any, T2 any, T3 any] struct {
+	X1 T1
+	X2 T2
+	X3 T3
+}
+
+type Tuple4[T1 any, T2 any, T3 any, T4 any] struct {
+	X1 T1
+	X2 T2
+	X3 T3
+	X4 T4
 }

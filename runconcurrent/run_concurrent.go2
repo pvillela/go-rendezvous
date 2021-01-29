@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/pvillela/go-trygo2/errorof"
+	"github.com/pvillela/go-trygo2/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -26,7 +26,7 @@ func safeGoWgCtx[T any](
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err := errorof.ErrorOfIfNeeded(err0)
+				err := util.ErrorOfIfNeeded(err0)
 				var zero T
 				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}
@@ -68,7 +68,7 @@ func safeGoEgCtx[T any](
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err = errorof.ErrorOfIfNeeded(err0)
+				err = util.ErrorOfIfNeeded(err0)
 				var zero T
 				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}

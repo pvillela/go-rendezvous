@@ -2,5 +2,5 @@
 
 MYDIR="$(dirname "$0")"
 
-${MYDIR}/../errorof/clean.sh
+${MYDIR}/../util/clean.sh
 rm ${MYDIR}/*.go

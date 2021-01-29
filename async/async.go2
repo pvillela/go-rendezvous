@@ -3,8 +3,7 @@ package async
 import (
 	"context"
 
-	"github.com/pvillela/go-trygo2/errorof"
-	"github.com/pvillela/go-trygo2/tuple"
+	"github.com/pvillela/go-trygo2/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -31,7 +30,7 @@ func makeDeferred[T any](
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err = errorof.ErrorOfIfNeeded(err0)
+				err = util.ErrorOfIfNeeded(err0)
 			}
 		}()
 		res, err := f(ctx)
@@ -66,10 +65,10 @@ func Async2[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
 	f2 func(ctx context.Context) (T2, error),
-) tuple.Tuple2[Deferred[T1], Deferred[T2]] {
+) util.Tuple2[Deferred[T1], Deferred[T2]] {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	d1 := makeDeferred(ctx, eg, f1)
 	d2 := makeDeferred(ctx, eg, f2)
-	return tuple.Tuple2[Deferred[T1], Deferred[T2]]{d1, d2}
+	return util.Tuple2[Deferred[T1], Deferred[T2]]{d1, d2}
 }
