@@ -3,5 +3,4 @@
 MYDIR="$(dirname "$0")"
 
 ${MYDIR}/../errorof/translate.sh
-${MYDIR}/../tuple/translate.sh
 go tool go2go translate ${MYDIR}/*.go2
