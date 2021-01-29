@@ -1,0 +1,20 @@
+package errorof
+
+import "fmt"
+
+type ErrorOf struct {
+	Value interface{}
+}
+
+func (err ErrorOf) Error() string {
+	return fmt.Sprintf("%v", err.Value)
+}
+
+func ErrorOfIfNeeded(x interface{}) error {
+	switch x.(type) {
+	case error:
+		return x.(error)
+	default:
+		return ErrorOf{x}
+	}
+}

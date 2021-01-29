@@ -2,9 +2,9 @@ package runconcurrent
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
+	"github.com/pvillela/go-trygo2/errorof"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -13,32 +13,20 @@ type ResultWithError[T any] struct {
 	Error  error
 }
 
-type ErrorOf struct {
-	Value interface{}
-}
-
-func (err ErrorOf) Error() string {
-	return fmt.Sprintf("%v", err.Value)
-}
-
-func ErrorOfIfNeeded(x interface{}) error {
-	switch x.(type) {
-	case error:
-		return x.(error)
-	default:
-		return ErrorOf{x}
-	}
-}
-
-func safeGoWgCtx[T any](ctx context.Context, wg *sync.WaitGroup,
-	f func(context.Context) (T, error), index int, pResults *[]ResultWithError[T]) {
+func safeGoWgCtx[T any](
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	f func(context.Context) (T, error),
+	index int,
+	pResults *[]ResultWithError[T],
+) {
 
 	wg.Add(1)
 	safeF := func() {
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err := ErrorOfIfNeeded(err0)
+				err := errorof.ErrorOfIfNeeded(err0)
 				var zero T
 				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}
@@ -69,12 +57,18 @@ func RunConcurrentWg[T any](funcs ...func() (T, error)) []ResultWithError[T] {
 	return RunConcurrentWgCtx(nil, funcsCtx...)
 }
 
-func safeGoEgCtx[T any](ctx context.Context, eg *errgroup.Group, f func(context.Context) (T, error), index int, pResults *[]ResultWithError[T]) {
+func safeGoEgCtx[T any](
+	ctx context.Context, eg *errgroup.Group,
+	f func(context.Context) (T, error),
+	index int,
+	pResults *[]ResultWithError[T],
+) {
+
 	safeF := func() (err error) {
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err = ErrorOfIfNeeded(err0)
+				err = errorof.ErrorOfIfNeeded(err0)
 				var zero T
 				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}

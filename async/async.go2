@@ -3,6 +3,8 @@ package async
 import (
 	"context"
 
+	"github.com/pvillela/go-trygo2/errorof"
+	"github.com/pvillela/go-trygo2/tuple"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -17,19 +19,57 @@ func (d Deferred[T]) Await() (T, error) {
 	return d.Value, err
 }
 
-func Async[T any](ctx context.Context, funcs ...func(ctx context.Context) (T, error)) Deferred[[]T] {
-	eg, ctx := errgroup.WithContext(ctx)
-	var deferred Deferred[[]T]
-	deferred.Value = make([]T, len(funcs))
+func makeDeferred[T any](
+	ctx context.Context,
+	eg *errgroup.Group,
+	f func(ctx context.Context,
+	) (T, error)) Deferred[T] {
+
+	var deferred Deferred[T]
 	deferred.Eg = eg
+	eg.Go(func() (err error) {
+		defer func() {
+			err0 := recover()
+			if err0 != nil {
+				err = errorof.ErrorOfIfNeeded(err0)
+			}
+		}()
+		res, err := f(ctx)
+		deferred.Value = res
+		return
+	})
+	return deferred
+}
+
+func Asyncs[T any](ctx context.Context, funcs ...func(ctx context.Context) (T, error)) []Deferred[T] {
+	eg, ctx := errgroup.WithContext(ctx)
+	deferred := make([]Deferred[T], len(funcs))
 	for i, f := range funcs {
 		i, f := i, f // avoid improper capture in closure
 		eg.Go(func() error {
 			// TODO: need to handle panics
 			res, err := f(ctx)
-			deferred.Value[i] = res
+			deferred[i].Value = res
+			deferred[i].Eg = eg
 			return err
 		})
 	}
 	return deferred
+}
+
+func Async[T any](ctx context.Context, f func(ctx context.Context) (T, error)) Deferred[T] {
+	eg, ctx := errgroup.WithContext(ctx)
+	return makeDeferred(ctx, eg, f)
+}
+
+func Async2[T1 any, T2 any](
+	ctx context.Context,
+	f1 func(ctx context.Context) (T1, error),
+	f2 func(ctx context.Context) (T2, error),
+) tuple.Tuple2[Deferred[T1], Deferred[T2]] {
+
+	eg, ctx := errgroup.WithContext(ctx)
+	d1 := makeDeferred(ctx, eg, f1)
+	d2 := makeDeferred(ctx, eg, f2)
+	return tuple.Tuple2[Deferred[T1], Deferred[T2]]{d1, d2}
 }
