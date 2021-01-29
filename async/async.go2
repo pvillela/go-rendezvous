@@ -1,0 +1,35 @@
+package async
+
+import (
+	"context"
+
+	"golang.org/x/sync/errgroup"
+)
+
+// This is modeled on my Kotlin Promixe
+type Deferred[T any] struct {
+	Value T
+	Eg    *errgroup.Group
+}
+
+func (d Deferred[T]) Await() (T, error) {
+	err := d.Eg.Wait()
+	return d.Value, err
+}
+
+func Async[T any](ctx context.Context, funcs ...func(ctx context.Context) (T, error)) Deferred[[]T] {
+	eg, ctx := errgroup.WithContext(ctx)
+	var deferred Deferred[[]T]
+	deferred.Value = make([]T, len(funcs))
+	deferred.Eg = eg
+	for i, f := range funcs {
+		i, f := i, f // avoid improper capture in closure
+		eg.Go(func() error {
+			// TODO: need to handle panics
+			res, err := f(ctx)
+			deferred.Value[i] = res
+			return err
+		})
+	}
+	return deferred
+}

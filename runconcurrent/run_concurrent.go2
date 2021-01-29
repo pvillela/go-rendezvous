@@ -1,33 +1,112 @@
 package runconcurrent
 
-import "sync"
+import (
+	"context"
+	"fmt"
+	"sync"
 
-type ResultWithError struct {
-	Result int
-	Error  interface{}
+	"golang.org/x/sync/errgroup"
+)
+
+type ResultWithError[T any] struct {
+	Result T
+	Error  error
 }
 
-func safeGo(pWg *sync.WaitGroup, f func() int, index int, pResults *[]ResultWithError) {
-	pWg.Add(1)
+type ErrorOf struct {
+	Value interface{}
+}
+
+func (err ErrorOf) Error() string {
+	return fmt.Sprintf("%v", err.Value)
+}
+
+func ErrorOfIfNeeded(x interface{}) error {
+	switch x.(type) {
+	case error:
+		return x.(error)
+	default:
+		return ErrorOf{x}
+	}
+}
+
+func safeGoWgCtx[T any](ctx context.Context, wg *sync.WaitGroup,
+	f func(context.Context) (T, error), index int, pResults *[]ResultWithError[T]) {
+
+	wg.Add(1)
 	safeF := func() {
 		defer func() {
-			err := recover()
-			if err != nil {
-				(*pResults)[index] = ResultWithError{0, err}
+			err0 := recover()
+			if err0 != nil {
+				err := ErrorOfIfNeeded(err0)
+				var zero T
+				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}
-			pWg.Done()
+			wg.Done()
 		}()
-		(*pResults)[index] = ResultWithError{f(), nil}
+		res, err := f(ctx)
+		(*pResults)[index] = ResultWithError[T]{res, err}
 	}
 	go safeF()
 }
 
-func RunConcurrent(funcs ...func() int) []ResultWithError {
-	results := make([]ResultWithError, len(funcs))
-	var wg sync.WaitGroup
+func RunConcurrentWgCtx[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) []ResultWithError[T] {
+	results := make([]ResultWithError[T], len(funcs))
+	wg := new(sync.WaitGroup)
 	for index, f := range funcs {
-		safeGo(&wg, f, index, &results)
+		safeGoWgCtx(ctx, wg, f, index, &results)
 	}
 	wg.Wait()
 	return results
+}
+
+func RunConcurrentWg[T any](funcs ...func() (T, error)) []ResultWithError[T] {
+	var funcsCtx = make([]func(context.Context) (T, error), len(funcs))
+	for i, f := range funcs {
+		f := f // avoid improper capture in closure
+		funcsCtx[i] = func(_ context.Context) (T, error) { return f() }
+	}
+	return RunConcurrentWgCtx(nil, funcsCtx...)
+}
+
+func safeGoEgCtx[T any](ctx context.Context, eg *errgroup.Group, f func(context.Context) (T, error), index int, pResults *[]ResultWithError[T]) {
+	safeF := func() (err error) {
+		defer func() {
+			err0 := recover()
+			if err0 != nil {
+				err = ErrorOfIfNeeded(err0)
+				var zero T
+				(*pResults)[index] = ResultWithError[T]{zero, err}
+			}
+		}()
+		res, err := f(ctx)
+		(*pResults)[index] = ResultWithError[T]{res, err}
+		return
+	}
+	eg.Go(safeF)
+}
+
+func RunConcurrentEgCtx[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) ([]T, error) {
+	resultsWithError := make([]ResultWithError[T], len(funcs))
+	eg, ctx := errgroup.WithContext(ctx)
+	for index, f := range funcs {
+		safeGoEgCtx(ctx, eg, f, index, &resultsWithError)
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	results := make([]T, len(funcs))
+	for i, rwe := range resultsWithError {
+		results[i] = rwe.Result
+	}
+	return results, nil
+}
+
+func RunConcurrentEg[T any](funcs ...func() (T, error)) ([]T, error) {
+	var funcsCtx = make([]func(context.Context) (T, error), len(funcs))
+	for i, f := range funcs {
+		f := f // avoid improper capture in closure
+		funcsCtx[i] = func(_ context.Context) (T, error) { return f() }
+	}
+	return RunConcurrentEgCtx(context.Background(), funcsCtx...)
 }

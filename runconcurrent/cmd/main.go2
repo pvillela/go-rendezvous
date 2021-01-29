@@ -1,33 +1,50 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"github.com/pvillela/go-trygo2/runconcurrent"
 	"time"
+
+	"github.com/pvillela/go-trygo2/runconcurrent"
 )
 
-func f1() int {
+func f1() (int, error) {
 	fmt.Println(">>> f1 starting")
 	time.Sleep(100 * time.Millisecond)
 	fmt.Println("<<< f1 finishing")
-	return 1
+	return 1, nil
 }
 
-func f2() int {
+func f2() (int, error) {
 	fmt.Println(">>> f2 starting")
 	time.Sleep(200 * time.Millisecond)
 	fmt.Println("<<< f2 finishing")
 	panic("f2 panicked")
 }
 
-func f3() int {
+func f3() (int, error) {
 	fmt.Println(">>> f3 starting")
 	time.Sleep(300 * time.Millisecond)
 	fmt.Println("<<< f3 finishing")
-	return 3
+	return 0, errors.New("f3 errored-out")
+}
+
+func f4() (int, error) {
+	fmt.Println(">>> f4 starting")
+	time.Sleep(400 * time.Millisecond)
+	fmt.Println("<<< f4 finishing")
+	return 4, nil
 }
 
 func main() {
-	results := runconcurrent.RunConcurrent(f1, f2, f3)
-	fmt.Println(results)
+	resultsWg := runconcurrent.RunConcurrentWg(f1, f2, f3, f4)
+	fmt.Println(resultsWg)
+	resultsEg, err := runconcurrent.RunConcurrentEg(f1, f2, f3, f4)
+	fmt.Println(resultsEg, err)
+	resultsEg, err = runconcurrent.RunConcurrentEg(f1, f2, f4)
+	fmt.Println(resultsEg, err)
+	resultsEg, err = runconcurrent.RunConcurrentEg(f1, f3, f4)
+	fmt.Println(resultsEg, err)
+	resultsEg, err = runconcurrent.RunConcurrentEg(f1, f4)
+	fmt.Println(resultsEg, err)
 }
