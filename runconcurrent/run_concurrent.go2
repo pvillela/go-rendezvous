@@ -13,12 +13,11 @@ type ResultWithError[T any] struct {
 	Error  error
 }
 
-func safeGoWgCtx[T any](
+func safeGoWg[T any](
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	f func(context.Context) (T, error),
-	index int,
-	pResults *[]ResultWithError[T],
+	pResult *ResultWithError[T],
 ) {
 	wg.Add(1)
 	safeF := func() {
@@ -27,40 +26,47 @@ func safeGoWgCtx[T any](
 			if err0 != nil {
 				err := util.ToError(err0)
 				var zero T
-				(*pResults)[index] = ResultWithError[T]{zero, err}
+				*pResult = ResultWithError[T]{zero, err}
 			}
 			wg.Done()
 		}()
 		res, err := f(ctx)
-		(*pResults)[index] = ResultWithError[T]{res, err}
+		*pResult = ResultWithError[T]{res, err}
 	}
 	go safeF()
 }
 
-func RunConcurrentWgCtx[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) []ResultWithError[T] {
+func RunConcurrentsWg[T any](
+	ctx context.Context,
+	funcs ...func(context.Context) (T, error),
+) []ResultWithError[T] {
 	results := make([]ResultWithError[T], len(funcs))
 	wg := new(sync.WaitGroup)
 	for index, f := range funcs {
-		safeGoWgCtx(ctx, wg, f, index, &results)
+		safeGoWg(ctx, wg, f, &results[index])
 	}
 	wg.Wait()
 	return results
 }
 
-func RunConcurrentWg[T any](funcs ...func() (T, error)) []ResultWithError[T] {
-	var funcsCtx = make([]func(context.Context) (T, error), len(funcs))
-	for i, f := range funcs {
-		f := f // avoid improper capture in closure
-		funcsCtx[i] = func(_ context.Context) (T, error) { return f() }
-	}
-	return RunConcurrentWgCtx(nil, funcsCtx...)
+func RunConcurrent2Wg[T1, T2 any](
+	ctx context.Context,
+	f1 func(context.Context) (T1, error),
+	f2 func(context.Context) (T2, error),
+) util.Tuple2[ResultWithError[T1], ResultWithError[T2]] {
+	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
+	wg := new(sync.WaitGroup)
+	safeGoWg(ctx, wg, f1, &results.X1)
+	safeGoWg(ctx, wg, f2, &results.X2)
+	wg.Wait()
+	return results
 }
 
-func safeGoEgCtx[T any](
-	ctx context.Context, eg *errgroup.Group,
+func safeGoEg[T any](
+	ctx context.Context,
+	eg *errgroup.Group,
 	f func(context.Context) (T, error),
-	index int,
-	pResults *[]ResultWithError[T],
+	pResult *T,
 ) {
 	safeF := func() (err error) {
 		defer func() {
@@ -68,37 +74,37 @@ func safeGoEgCtx[T any](
 			if err0 != nil {
 				err = util.ToError(err0)
 				var zero T
-				(*pResults)[index] = ResultWithError[T]{zero, err}
+				*pResult = zero
 			}
 		}()
 		res, err := f(ctx)
-		(*pResults)[index] = ResultWithError[T]{res, err}
+		*pResult = res
 		return
 	}
 	eg.Go(safeF)
 }
 
-func RunConcurrentEgCtx[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) ([]T, error) {
-	resultsWithError := make([]ResultWithError[T], len(funcs))
+func RunConcurrentsEg[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) ([]T, error) {
+	results := make([]T, len(funcs))
 	eg, ctx := errgroup.WithContext(ctx)
 	for index, f := range funcs {
-		safeGoEgCtx(ctx, eg, f, index, &resultsWithError)
+		safeGoEg(ctx, eg, f, &results[index])
 	}
 	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-	results := make([]T, len(funcs))
-	for i, rwe := range resultsWithError {
-		results[i] = rwe.Result
+		return results, err
 	}
 	return results, nil
 }
 
-func RunConcurrentEg[T any](funcs ...func() (T, error)) ([]T, error) {
-	var funcsCtx = make([]func(context.Context) (T, error), len(funcs))
-	for i, f := range funcs {
-		f := f // avoid improper capture in closure
-		funcsCtx[i] = func(_ context.Context) (T, error) { return f() }
-	}
-	return RunConcurrentEgCtx(context.Background(), funcsCtx...)
+func RunConcurrent2Eg[T1, T2 any](
+	ctx context.Context,
+	f1 func(context.Context) (T1, error),
+	f2 func(context.Context) (T2, error),
+) (util.Tuple2[T1, T2], error) {
+	res := util.Tuple2[T1, T2]{}
+	eg, ctx := errgroup.WithContext(ctx)
+	safeGoEg(ctx, eg, f1, &res.X1)
+	safeGoEg(ctx, eg, f2, &res.X2)
+	err := eg.Wait()
+	return res, err
 }
