@@ -1,0 +1,81 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/pvillela/go-trygo2/async"
+	"github.com/pvillela/go-trygo2/util"
+)
+
+func f1(_ context.Context) (int, error) {
+	fmt.Println(">>> f1 starting")
+	time.Sleep(100 * time.Millisecond)
+	fmt.Println("<<< f1 finishing")
+	return 1, nil
+}
+
+func f2(_ context.Context) (int, error) {
+	fmt.Println(">>> f2 starting")
+	time.Sleep(200 * time.Millisecond)
+	fmt.Println("<<< f2 finishing")
+	panic("f2 panicked")
+}
+
+func f3(_ context.Context) (int, error) {
+	fmt.Println(">>> f3 starting")
+	time.Sleep(300 * time.Millisecond)
+	fmt.Println("<<< f3 finishing")
+	return 0, errors.New("f3 errored-out")
+}
+
+func f4(_ context.Context) (int, error) {
+	fmt.Println(">>> f4 starting")
+	time.Sleep(400 * time.Millisecond)
+	fmt.Println("<<< f4 finishing")
+	return 4, nil
+}
+
+func main() {
+	fmt.Println("*** f1")
+	sf1 := util.SafeFunc1E(f1)
+	fmt.Println(sf1(context.Background()))
+
+	fmt.Println("*** f2")
+	sf2 := util.SafeFunc1E(f2)
+	fmt.Println(sf2(context.Background()))
+
+	fmt.Println("*** deferred1")
+	deferred1 := async.Async(context.Background(), f1)
+	fmt.Println(deferred1.Await())
+
+	fmt.Println("*** deferred12")
+	deferred12 := async.Async2(context.Background(), f1, f2)
+	fmt.Println(deferred12.X1.Await())
+	fmt.Println(deferred12.X2.Await())
+
+	fmt.Println("*** deferred14")
+	deferred14 := async.Async2(context.Background(), f1, f4)
+	fmt.Println(deferred14.X1.Await())
+	fmt.Println(deferred14.X2.Await())
+
+	fmt.Println("*** deferreds1234")
+	deferreds1234 := async.Asyncs(context.Background(), f1, f2, f3, f4)
+	for _, deferred := range deferreds1234 {
+		fmt.Println(deferred.Await())
+	}
+
+	fmt.Println("*** deferreds134")
+	deferreds134 := async.Asyncs(context.Background(), f1, f3, f4)
+	for _, deferred := range deferreds134 {
+		fmt.Println(deferred.Await())
+	}
+
+	fmt.Println("*** deferreds14")
+	deferreds14 := async.Asyncs(context.Background(), f1, f4)
+	for _, deferred := range deferreds14 {
+		fmt.Println(deferred.Await())
+	}
+}

@@ -20,13 +20,12 @@ func safeGoWgCtx[T any](
 	index int,
 	pResults *[]ResultWithError[T],
 ) {
-
 	wg.Add(1)
 	safeF := func() {
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err := util.ErrorOfIfNeeded(err0)
+				err := util.ToError(err0)
 				var zero T
 				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}
@@ -63,12 +62,11 @@ func safeGoEgCtx[T any](
 	index int,
 	pResults *[]ResultWithError[T],
 ) {
-
 	safeF := func() (err error) {
 		defer func() {
 			err0 := recover()
 			if err0 != nil {
-				err = util.ErrorOfIfNeeded(err0)
+				err = util.ToError(err0)
 				var zero T
 				(*pResults)[index] = ResultWithError[T]{zero, err}
 			}
