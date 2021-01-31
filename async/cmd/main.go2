@@ -31,51 +31,120 @@ func f3(_ context.Context) (int, error) {
 	return 0, errors.New("f3 errored-out")
 }
 
-func f4(_ context.Context) (int, error) {
+func f4(ctx context.Context) (int, error) {
 	fmt.Println(">>> f4 starting")
 	time.Sleep(400 * time.Millisecond)
 	fmt.Println("<<< f4 finishing")
+	if ctx.Err() != nil {
+		return 999, errors.New("aborted")
+	}
 	return 4, nil
 }
 
 func main() {
-	fmt.Println("*** f1")
-	sf1 := util.SafeFunc1E(f1)
-	fmt.Println(sf1(context.Background()))
+	func() {
+		fmt.Println("*** f1")
+		f := util.SafeFunc1E(f1)
+		fmt.Println(f(context.Background()))
+	}()
 
-	fmt.Println("*** f2")
-	sf2 := util.SafeFunc1E(f2)
-	fmt.Println(sf2(context.Background()))
+	func() {
+		fmt.Println("*** f2")
+		f := util.SafeFunc1E(f2)
+		fmt.Println(f(context.Background()))
+	}()
 
-	fmt.Println("*** deferred1")
-	deferred1 := async.Async(context.Background(), f1)
-	fmt.Println(deferred1.Await())
-
-	fmt.Println("*** deferred12")
-	deferred12 := async.Async2(context.Background(), f1, f2)
-	fmt.Println(deferred12.X1.Await())
-	fmt.Println(deferred12.X2.Await())
-
-	fmt.Println("*** deferred14")
-	deferred14 := async.Async2(context.Background(), f1, f4)
-	fmt.Println(deferred14.X1.Await())
-	fmt.Println(deferred14.X2.Await())
-
-	fmt.Println("*** deferreds1234")
-	deferreds1234 := async.Asyncs(context.Background(), f1, f2, f3, f4)
-	for _, deferred := range deferreds1234 {
+	func() {
+		fmt.Println("*** Async 1")
+		deferred := async.Async(context.Background(), f1)
 		fmt.Println(deferred.Await())
-	}
+	}()
 
-	fmt.Println("*** deferreds134")
-	deferreds134 := async.Asyncs(context.Background(), f1, f3, f4)
-	for _, deferred := range deferreds134 {
+	func() {
+		fmt.Println("*** Async 2")
+		deferred := async.Async(context.Background(), f2)
 		fmt.Println(deferred.Await())
-	}
+	}()
 
-	fmt.Println("*** deferreds14")
-	deferreds14 := async.Asyncs(context.Background(), f1, f4)
-	for _, deferred := range deferreds14 {
+	func() {
+		fmt.Println("*** Async 3")
+		deferred := async.Async(context.Background(), f3)
 		fmt.Println(deferred.Await())
-	}
+	}()
+
+	func() {
+		fmt.Println("*** Async2Eg 12")
+		deferreds := async.Async2Eg(context.Background(), f1, f2)
+		fmt.Println(deferreds.X1.Await())
+		fmt.Println(deferreds.X2.Await())
+	}()
+
+	func() {
+		fmt.Println("*** Async2Eg 14")
+		deferreds := async.Async2Eg(context.Background(), f1, f4)
+		fmt.Println(deferreds.X1.Await())
+		fmt.Println(deferreds.X2.Await())
+	}()
+
+	func() {
+		fmt.Println("*** AsyncsEg 1234")
+		deferreds := async.AsyncsEg(context.Background(), f1, f2, f3, f4)
+		for _, deferred := range deferreds {
+			fmt.Println(deferred.Await())
+		}
+	}()
+
+	func() {
+		fmt.Println("*** AsyncsEg 134")
+		deferreds := async.AsyncsEg(context.Background(), f1, f3, f4)
+		for _, deferred := range deferreds {
+			fmt.Println(deferred.Await())
+		}
+	}()
+
+	func() {
+		fmt.Println("*** AsyncsEg 14")
+		deferreds := async.AsyncsEg(context.Background(), f1, f4)
+		for _, deferred := range deferreds {
+			fmt.Println(deferred.Await())
+		}
+	}()
+
+	func() {
+		fmt.Println("*** Async2Wg 12")
+		deferreds := async.Async2Wg(context.Background(), f1, f2)
+		fmt.Println(deferreds.X1.Await())
+		fmt.Println(deferreds.X2.Await())
+	}()
+
+	func() {
+		fmt.Println("*** Async2Wg 14")
+		deferreds := async.Async2Wg(context.Background(), f1, f4)
+		fmt.Println(deferreds.X1.Await())
+		fmt.Println(deferreds.X2.Await())
+	}()
+
+	func() {
+		fmt.Println("*** AsyncsWg 1234")
+		deferreds := async.AsyncsWg(context.Background(), f1, f2, f3, f4)
+		for _, deferred := range deferreds {
+			fmt.Println(deferred.Await())
+		}
+	}()
+
+	func() {
+		fmt.Println("*** AsyncsWg 134")
+		deferreds := async.AsyncsWg(context.Background(), f1, f3, f4)
+		for _, deferred := range deferreds {
+			fmt.Println(deferred.Await())
+		}
+	}()
+
+	func() {
+		fmt.Println("*** AsyncsWg 14")
+		deferreds := async.AsyncsWg(context.Background(), f1, f4)
+		for _, deferred := range deferreds {
+			fmt.Println(deferred.Await())
+		}
+	}()
 }

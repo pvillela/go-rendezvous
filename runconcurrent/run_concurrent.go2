@@ -8,6 +8,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+//***********************************
+// The RunConcurrentXXX functions could be easily implemented using the AsyncXXX functions
+// in the async package, though the implementations below may be a bit more efficient.
+//***********************************
+
 type ResultWithError[T any] struct {
 	Result T
 	Error  error
@@ -20,20 +25,12 @@ func safeGoWg[T any](
 	pResult *ResultWithError[T],
 ) {
 	wg.Add(1)
-	safeF := func() {
-		defer func() {
-			err0 := recover()
-			if err0 != nil {
-				err := util.ToError(err0)
-				var zero T
-				*pResult = ResultWithError[T]{zero, err}
-			}
-			wg.Done()
-		}()
-		res, err := f(ctx)
+	fs := util.SafeFunc1E(f)
+	go func() {
+		defer wg.Done()
+		res, err := fs(ctx)
 		*pResult = ResultWithError[T]{res, err}
-	}
-	go safeF()
+	}()
 }
 
 func RunConcurrentsWg[T any](
@@ -68,20 +65,12 @@ func safeGoEg[T any](
 	f func(context.Context) (T, error),
 	pResult *T,
 ) {
-	safeF := func() (err error) {
-		defer func() {
-			err0 := recover()
-			if err0 != nil {
-				err = util.ToError(err0)
-				var zero T
-				*pResult = zero
-			}
-		}()
-		res, err := f(ctx)
+	fs := util.SafeFunc1E(f)
+	eg.Go(func() error {
+		res, err := fs(ctx)
 		*pResult = res
-		return
-	}
-	eg.Go(safeF)
+		return err
+	})
 }
 
 func RunConcurrentsEg[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) ([]T, error) {

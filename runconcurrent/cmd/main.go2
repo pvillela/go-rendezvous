@@ -35,7 +35,7 @@ func f4(ctx context.Context) (int, error) {
 	time.Sleep(400 * time.Millisecond)
 	fmt.Println("<<< f4 finishing")
 	if ctx.Err() != nil {
-		return 999, nil
+		return 999, errors.New("aborted")
 	}
 	return 4, nil
 }
