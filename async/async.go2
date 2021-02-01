@@ -8,108 +8,204 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Deferred[T any] interface {
+//***********************************
+// See also the implementation of the RunConcurrentXXX functions in package runconcurrent.
+// Those implementations are a bit more direct.
+//***********************************
+
+type ResultWithError[T any] struct {
+	Value T
+	Error error
+}
+
+type Promise[T any] interface {
 	Await() (T, error)
 }
 
-// This is modeled on my Kotlin Promise
-type deferredEg[T any] struct {
+type promiseMx[T any] struct {
+	Value T
+	Error error
+	Lock  *sync.RWMutex
+}
+
+func (p *promiseMx[T]) Await() (T, error) {
+	defer p.Lock.RUnlock()
+	p.Lock.RLock()
+	return p.Value, p.Error
+}
+
+type promiseEg[T any] struct {
 	Value T
 	Eg    *errgroup.Group
 }
 
-func (d *deferredEg[T]) Await() (T, error) {
-	err := d.Eg.Wait()
-	return d.Value, err
+func (p *promiseEg[T]) Await() (T, error) {
+	err := p.Eg.Wait()
+	return p.Value, err
 }
 
-// This is modeled on my Kotlin Promise
-type deferredWg[T any] struct {
+type promiseWg[T any] struct {
 	Value T
 	Error error
 	Wg    *sync.WaitGroup
 }
 
-func (d *deferredWg[T]) Await() (T, error) {
-	d.Wg.Wait()
-	return d.Value, d.Error
+func (p *promiseWg[T]) Await() (T, error) {
+	p.Wg.Wait()
+	return p.Value, p.Error
+}
+
+func Async[T any](
+	ctx context.Context,
+	f func(ctx context.Context) (T, error),
+) Promise[T] {
+	lock := new(sync.RWMutex)
+	lock.Lock()
+	promise := new(promiseMx[T])
+	promise.Lock = lock
+	fs := util.SafeFunc1E(f)
+	go func() {
+		defer lock.Unlock()
+		res, err := fs(ctx)
+		promise.Value = res
+		promise.Error = err
+	}()
+	return promise
 }
 
 func AsyncOnEg[T any](
 	ctx context.Context,
 	eg *errgroup.Group,
 	f func(ctx context.Context) (T, error),
-) Deferred[T] {
-	deferred := &deferredEg[T]{}
-	deferred.Eg = eg
+) Promise[T] {
+	promise := &promiseEg[T]{}
+	promise.Eg = eg
 	fs := util.SafeFunc1E(f)
 	eg.Go(func() error {
 		res, err := fs(ctx)
-		deferred.Value = res
+		promise.Value = res
 		return err
 	})
-	return deferred
+	return promise
 }
 
 func AsyncOnWg[T any](
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	f func(ctx context.Context) (T, error),
-) Deferred[T] {
-	deferred := &deferredWg[T]{}
-	deferred.Wg = wg
+) Promise[T] {
+	promise := &promiseWg[T]{}
+	promise.Wg = wg
 	wg.Add(1)
 	fs := util.SafeFunc1E(f)
 	go func() {
 		defer wg.Done()
 		res, err := fs(ctx)
-		deferred.Value = res
-		deferred.Error = err
+		promise.Value = res
+		promise.Error = err
 	}()
-	return deferred
+	return promise
 }
 
-func Async[T any](ctx context.Context, f func(ctx context.Context) (T, error)) Deferred[T] {
-	var wg sync.WaitGroup
-	return AsyncOnWg(ctx, &wg, f)
+func RunConcurrent2Eg[T1 any, T2 any](
+	ctx context.Context,
+	f1 func(ctx context.Context) (T1, error),
+	f2 func(ctx context.Context) (T2, error),
+) (util.Tuple2[T1, T2], error) {
+	eg, ctx := errgroup.WithContext(ctx)
+	p1 := AsyncOnEg(ctx, eg, f1).(*promiseEg[T1])
+	p2 := AsyncOnEg(ctx, eg, f2).(*promiseEg[T2])
+	err := eg.Wait()
+	return util.Tuple2[T1, T2]{X1: p1.Value, X2: p2.Value}, err
 }
 
 func Async2Eg[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
 	f2 func(ctx context.Context) (T2, error),
-) util.Tuple2[Deferred[T1], Deferred[T2]] {
-	eg, ctx := errgroup.WithContext(ctx)
-	d1 := AsyncOnEg(ctx, eg, f1)
-	d2 := AsyncOnEg(ctx, eg, f2)
-	return util.Tuple2[Deferred[T1], Deferred[T2]]{X1: d1, X2: d2}
+) Promise[util.Tuple2[T1, T2]] {
+	f := func(ctx context.Context) (util.Tuple2[T1, T2], error) {
+		return RunConcurrent2Eg[T1, T2](ctx, f1, f2)
+	}
+	return Async(ctx, f)
 }
 
-func AsyncsEg[T any](ctx context.Context, funcs ...func(ctx context.Context) (T, error)) []Deferred[T] {
+func RunConcurrentsEg[T any](
+	ctx context.Context,
+	funcs ...func(ctx context.Context) (T, error),
+) ([]T, error) {
 	eg, ctx := errgroup.WithContext(ctx)
-	deferreds := make([]Deferred[T], len(funcs))
+	promises := make([]*promiseEg[T], len(funcs))
 	for i, f := range funcs {
-		deferreds[i] = AsyncOnEg(ctx, eg, f)
+		promises[i] = AsyncOnEg(ctx, eg, f).(*promiseEg[T])
 	}
-	return deferreds
+	err := eg.Wait()
+	values := make([]T, len(funcs))
+	for i, p := range promises {
+		values[i] = p.Value
+	}
+	return values, err
+}
+
+func AsyncsEg[T any](
+	ctx context.Context,
+	funcs ...func(ctx context.Context) (T, error),
+) Promise[[]T] {
+	f := func(ctx context.Context) ([]T, error) {
+		return RunConcurrentsEg[T](ctx, funcs...)
+	}
+	return Async(ctx, f)
+}
+
+func RunConcurrent2Wg[T1 any, T2 any](
+	ctx context.Context,
+	f1 func(ctx context.Context) (T1, error),
+	f2 func(ctx context.Context) (T2, error),
+) util.Tuple2[ResultWithError[T1], ResultWithError[T2]] {
+	wg := new(sync.WaitGroup)
+	p1 := AsyncOnWg(ctx, wg, f1).(*promiseWg[T1])
+	p2 := AsyncOnWg(ctx, wg, f2).(*promiseWg[T2])
+	wg.Wait()
+	res1 := ResultWithError[T1]{p1.Value, p1.Error}
+	res2 := ResultWithError[T2]{p2.Value, p2.Error}
+	return util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{X1: res1, X2: res2}
 }
 
 func Async2Wg[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
 	f2 func(ctx context.Context) (T2, error),
-) util.Tuple2[Deferred[T1], Deferred[T2]] {
-	var wg sync.WaitGroup
-	d1 := AsyncOnWg(ctx, &wg, f1)
-	d2 := AsyncOnWg(ctx, &wg, f2)
-	return util.Tuple2[Deferred[T1], Deferred[T2]]{X1: d1, X2: d2}
+) Promise[util.Tuple2[ResultWithError[T1], ResultWithError[T2]]] {
+	f := func(ctx context.Context) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
+		return RunConcurrent2Wg[T1, T2](ctx, f1, f2), nil
+	}
+	return Async(ctx, f)
 }
 
-func AsyncsWg[T any](ctx context.Context, funcs ...func(ctx context.Context) (T, error)) []Deferred[T] {
-	var wg sync.WaitGroup
-	deferreds := make([]Deferred[T], len(funcs))
+func RunConcurrentsWg[T any](
+	ctx context.Context,
+	funcs ...func(ctx context.Context) (T, error),
+) []ResultWithError[T] {
+	wg := new(sync.WaitGroup)
+	promises := make([]*promiseWg[T], len(funcs))
 	for i, f := range funcs {
-		deferreds[i] = AsyncOnWg(ctx, &wg, f)
+		promises[i] = AsyncOnWg(ctx, wg, f).(*promiseWg[T])
 	}
-	return deferreds
+	wg.Wait()
+	results := make([]ResultWithError[T], len(funcs))
+	for i, p := range promises {
+		results[i].Value = p.Value
+		results[i].Error = p.Error
+	}
+	return results
+}
+
+func AsyncsWg[T any](
+	ctx context.Context,
+	funcs ...func(ctx context.Context) (T, error),
+) Promise[[]ResultWithError[T]] {
+	f := func(ctx context.Context) ([]ResultWithError[T], error) {
+		return RunConcurrentsWg[T](ctx, funcs...), nil
+	}
+	return Async(ctx, f)
 }

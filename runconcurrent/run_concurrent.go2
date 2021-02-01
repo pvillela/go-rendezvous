@@ -9,8 +9,8 @@ import (
 )
 
 //***********************************
-// The RunConcurrentXXX functions could be easily implemented using the AsyncXXX functions
-// in the async package, though the implementations below may be a bit more efficient.
+// The RunConcurrentXXX functions are also implemented using the AsyncXXX functions
+// in the async package. The implementations below are a bit more direct.
 //***********************************
 
 type ResultWithError[T any] struct {
