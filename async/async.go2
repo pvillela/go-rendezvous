@@ -19,7 +19,11 @@ type ResultWithError[T any] struct {
 /////////////////////
 // SafeGo
 
-func SafeGoMx[T any](
+// safeGoMx is only used in the implementation of Async.
+// It launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.  Before using the result, a caller must acquire a lock on the returned sync.Locker.
+// If f panics, the panic value is converted to an error and set in the result.
+func safeGoMx[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
@@ -35,6 +39,9 @@ func SafeGoMx[T any](
 	return lock.RLocker()
 }
 
+// SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.  Before using the result, a caller must wait on the sync.WaitGroup wg.
+// If f panics, the panic value is converted to an error and set in the result.
 func SafeGoWg[T any](
 	ctx context.Context,
 	wg *sync.WaitGroup,
@@ -50,6 +57,9 @@ func SafeGoWg[T any](
 	}()
 }
 
+// SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.  Before using the result, a caller must wait on eg.  If f panics, the panic value
+// is converted to an error and is fed to the errgroup.Group eg.
 func SafeGoEg[T any](
 	ctx context.Context,
 	eg *errgroup.Group,
@@ -165,7 +175,7 @@ func Async[T any](
 ) Promise[T] {
 	promise := new(promiseMx[T])
 	pResWE := &promise.ResWE
-	lock := SafeGoMx(ctx, f, pResWE)
+	lock := safeGoMx(ctx, f, pResWE)
 	promise.Lock = lock
 	return promise
 }
