@@ -2,5 +2,5 @@
 
 MYDIR="$(dirname "$0")"
 
-${MYDIR}/../util/clean.sh
-rm ${MYDIR}/*.go
+${MYDIR}/../async/clean.sh
+# rm ${MYDIR}/*.go
