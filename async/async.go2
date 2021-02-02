@@ -8,30 +8,135 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-//***********************************
-// See also the implementation of the RunConcurrentXXX functions in package runconcurrent.
-// Those implementations are a bit more direct.
-//***********************************
+/////////////////////
+// ResultWithError
 
 type ResultWithError[T any] struct {
 	Value T
 	Error error
 }
 
+/////////////////////
+// SafeGo
+
+func SafeGoMx[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+	pResult *ResultWithError[T],
+) sync.Locker {
+	lock := new(sync.RWMutex)
+	lock.Lock()
+	fs := util.SafeFunc1E(f)
+	go func() {
+		defer lock.Unlock()
+		res, err := fs(ctx)
+		*pResult = ResultWithError[T]{res, err}
+	}()
+	return lock.RLocker()
+}
+
+func SafeGoWg[T any](
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	f func(context.Context) (T, error),
+	pResult *ResultWithError[T],
+) {
+	wg.Add(1)
+	fs := util.SafeFunc1E(f)
+	go func() {
+		defer wg.Done()
+		res, err := fs(ctx)
+		*pResult = ResultWithError[T]{res, err}
+	}()
+}
+
+func SafeGoEg[T any](
+	ctx context.Context,
+	eg *errgroup.Group,
+	f func(context.Context) (T, error),
+	pResult *T,
+) {
+	fs := util.SafeFunc1E(f)
+	eg.Go(func() error {
+		res, err := fs(ctx)
+		*pResult = res
+		return err
+	})
+}
+
+/////////////////////
+// RunConcurrent
+
+func RunConcurrentsWg[T any](
+	ctx context.Context,
+	funcs ...func(context.Context) (T, error),
+) []ResultWithError[T] {
+	results := make([]ResultWithError[T], len(funcs))
+	wg := new(sync.WaitGroup)
+	for index, f := range funcs {
+		SafeGoWg(ctx, wg, f, &results[index])
+	}
+	wg.Wait()
+	return results
+}
+
+func RunConcurrent2Wg[T1, T2 any](
+	ctx context.Context,
+	f1 func(context.Context) (T1, error),
+	f2 func(context.Context) (T2, error),
+) util.Tuple2[ResultWithError[T1], ResultWithError[T2]] {
+	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
+	wg := new(sync.WaitGroup)
+	SafeGoWg(ctx, wg, f1, &results.X1)
+	SafeGoWg(ctx, wg, f2, &results.X2)
+	wg.Wait()
+	return results
+}
+
+func RunConcurrentsEg[T any](
+	ctx context.Context,
+	funcs ...func(context.Context) (T, error),
+) ([]T, error) {
+	results := make([]T, len(funcs))
+	eg, ctx := errgroup.WithContext(ctx)
+	for index, f := range funcs {
+		SafeGoEg(ctx, eg, f, &results[index])
+	}
+	if err := eg.Wait(); err != nil {
+		return results, err
+	}
+	return results, nil
+}
+
+func RunConcurrent2Eg[T1, T2 any](
+	ctx context.Context,
+	f1 func(context.Context) (T1, error),
+	f2 func(context.Context) (T2, error),
+) (util.Tuple2[T1, T2], error) {
+	res := util.Tuple2[T1, T2]{}
+	eg, ctx := errgroup.WithContext(ctx)
+	SafeGoEg(ctx, eg, f1, &res.X1)
+	SafeGoEg(ctx, eg, f2, &res.X2)
+	err := eg.Wait()
+	return res, err
+}
+
+/////////////////////
+// Promise
+
 type Promise[T any] interface {
 	Await() (T, error)
 }
 
 type promiseMx[T any] struct {
-	Value T
-	Error error
-	Lock  *sync.RWMutex
+	ResWE ResultWithError[T] // can't use embedded struct with go2go
+	Lock  sync.Locker
 }
 
 func (p *promiseMx[T]) Await() (T, error) {
-	defer p.Lock.RUnlock()
-	p.Lock.RLock()
-	return p.Value, p.Error
+	defer p.Lock.Unlock()
+	p.Lock.Lock()
+	return p.ResWE.Value, p.ResWE.Error
 }
 
 type promiseEg[T any] struct {
@@ -45,31 +150,23 @@ func (p *promiseEg[T]) Await() (T, error) {
 }
 
 type promiseWg[T any] struct {
-	Value T
-	Error error
+	ResWE ResultWithError[T] // can't use embedded struct with go2go
 	Wg    *sync.WaitGroup
 }
 
 func (p *promiseWg[T]) Await() (T, error) {
 	p.Wg.Wait()
-	return p.Value, p.Error
+	return p.ResWE.Value, p.ResWE.Error
 }
 
 func Async[T any](
 	ctx context.Context,
-	f func(ctx context.Context) (T, error),
+	f func(context.Context) (T, error),
 ) Promise[T] {
-	lock := new(sync.RWMutex)
-	lock.Lock()
 	promise := new(promiseMx[T])
+	pResWE := &promise.ResWE
+	lock := SafeGoMx(ctx, f, pResWE)
 	promise.Lock = lock
-	fs := util.SafeFunc1E(f)
-	go func() {
-		defer lock.Unlock()
-		res, err := fs(ctx)
-		promise.Value = res
-		promise.Error = err
-	}()
 	return promise
 }
 
@@ -78,14 +175,10 @@ func AsyncOnEg[T any](
 	eg *errgroup.Group,
 	f func(ctx context.Context) (T, error),
 ) Promise[T] {
-	promise := &promiseEg[T]{}
+	promise := new(promiseEg[T])
+	pRes := &promise.Value
+	SafeGoEg(ctx, eg, f, pRes)
 	promise.Eg = eg
-	fs := util.SafeFunc1E(f)
-	eg.Go(func() error {
-		res, err := fs(ctx)
-		promise.Value = res
-		return err
-	})
 	return promise
 }
 
@@ -94,29 +187,11 @@ func AsyncOnWg[T any](
 	wg *sync.WaitGroup,
 	f func(ctx context.Context) (T, error),
 ) Promise[T] {
-	promise := &promiseWg[T]{}
+	promise := new(promiseWg[T])
+	pResWE := &promise.ResWE
+	SafeGoWg(ctx, wg, f, pResWE)
 	promise.Wg = wg
-	wg.Add(1)
-	fs := util.SafeFunc1E(f)
-	go func() {
-		defer wg.Done()
-		res, err := fs(ctx)
-		promise.Value = res
-		promise.Error = err
-	}()
 	return promise
-}
-
-func RunConcurrent2Eg[T1 any, T2 any](
-	ctx context.Context,
-	f1 func(ctx context.Context) (T1, error),
-	f2 func(ctx context.Context) (T2, error),
-) (util.Tuple2[T1, T2], error) {
-	eg, ctx := errgroup.WithContext(ctx)
-	p1 := AsyncOnEg(ctx, eg, f1).(*promiseEg[T1])
-	p2 := AsyncOnEg(ctx, eg, f2).(*promiseEg[T2])
-	err := eg.Wait()
-	return util.Tuple2[T1, T2]{X1: p1.Value, X2: p2.Value}, err
 }
 
 func Async2Eg[T1 any, T2 any](
@@ -130,23 +205,6 @@ func Async2Eg[T1 any, T2 any](
 	return Async(ctx, f)
 }
 
-func RunConcurrentsEg[T any](
-	ctx context.Context,
-	funcs ...func(ctx context.Context) (T, error),
-) ([]T, error) {
-	eg, ctx := errgroup.WithContext(ctx)
-	promises := make([]*promiseEg[T], len(funcs))
-	for i, f := range funcs {
-		promises[i] = AsyncOnEg(ctx, eg, f).(*promiseEg[T])
-	}
-	err := eg.Wait()
-	values := make([]T, len(funcs))
-	for i, p := range promises {
-		values[i] = p.Value
-	}
-	return values, err
-}
-
 func AsyncsEg[T any](
 	ctx context.Context,
 	funcs ...func(ctx context.Context) (T, error),
@@ -155,20 +213,6 @@ func AsyncsEg[T any](
 		return RunConcurrentsEg[T](ctx, funcs...)
 	}
 	return Async(ctx, f)
-}
-
-func RunConcurrent2Wg[T1 any, T2 any](
-	ctx context.Context,
-	f1 func(ctx context.Context) (T1, error),
-	f2 func(ctx context.Context) (T2, error),
-) util.Tuple2[ResultWithError[T1], ResultWithError[T2]] {
-	wg := new(sync.WaitGroup)
-	p1 := AsyncOnWg(ctx, wg, f1).(*promiseWg[T1])
-	p2 := AsyncOnWg(ctx, wg, f2).(*promiseWg[T2])
-	wg.Wait()
-	res1 := ResultWithError[T1]{p1.Value, p1.Error}
-	res2 := ResultWithError[T2]{p2.Value, p2.Error}
-	return util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{X1: res1, X2: res2}
 }
 
 func Async2Wg[T1 any, T2 any](
@@ -180,24 +224,6 @@ func Async2Wg[T1 any, T2 any](
 		return RunConcurrent2Wg[T1, T2](ctx, f1, f2), nil
 	}
 	return Async(ctx, f)
-}
-
-func RunConcurrentsWg[T any](
-	ctx context.Context,
-	funcs ...func(ctx context.Context) (T, error),
-) []ResultWithError[T] {
-	wg := new(sync.WaitGroup)
-	promises := make([]*promiseWg[T], len(funcs))
-	for i, f := range funcs {
-		promises[i] = AsyncOnWg(ctx, wg, f).(*promiseWg[T])
-	}
-	wg.Wait()
-	results := make([]ResultWithError[T], len(funcs))
-	for i, p := range promises {
-		results[i].Value = p.Value
-		results[i].Error = p.Error
-	}
-	return results
 }
 
 func AsyncsWg[T any](

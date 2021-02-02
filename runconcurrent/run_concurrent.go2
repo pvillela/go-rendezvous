@@ -8,17 +8,28 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-//***********************************
-// The RunConcurrentXXX functions are also implemented using the AsyncXXX functions
-// in the async package. The implementations below are a bit more direct.
-//***********************************
-
 type ResultWithError[T any] struct {
-	Result T
-	Error  error
+	Value T
+	Error error
 }
 
-func safeGoWg[T any](
+func SafeGoMx[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+	pResult *ResultWithError[T],
+) sync.Locker {
+	lock := new(sync.RWMutex)
+	lock.Lock()
+	fs := util.SafeFunc1E(f)
+	go func() {
+		defer lock.Unlock()
+		res, err := fs(ctx)
+		*pResult = ResultWithError[T]{res, err}
+	}()
+	return lock.RLocker()
+}
+
+func SafeGoWg[T any](
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	f func(context.Context) (T, error),
@@ -40,7 +51,7 @@ func RunConcurrentsWg[T any](
 	results := make([]ResultWithError[T], len(funcs))
 	wg := new(sync.WaitGroup)
 	for index, f := range funcs {
-		safeGoWg(ctx, wg, f, &results[index])
+		SafeGoWg(ctx, wg, f, &results[index])
 	}
 	wg.Wait()
 	return results
@@ -53,13 +64,13 @@ func RunConcurrent2Wg[T1, T2 any](
 ) util.Tuple2[ResultWithError[T1], ResultWithError[T2]] {
 	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
 	wg := new(sync.WaitGroup)
-	safeGoWg(ctx, wg, f1, &results.X1)
-	safeGoWg(ctx, wg, f2, &results.X2)
+	SafeGoWg(ctx, wg, f1, &results.X1)
+	SafeGoWg(ctx, wg, f2, &results.X2)
 	wg.Wait()
 	return results
 }
 
-func safeGoEg[T any](
+func SafeGoEg[T any](
 	ctx context.Context,
 	eg *errgroup.Group,
 	f func(context.Context) (T, error),
@@ -73,11 +84,14 @@ func safeGoEg[T any](
 	})
 }
 
-func RunConcurrentsEg[T any](ctx context.Context, funcs ...func(context.Context) (T, error)) ([]T, error) {
+func RunConcurrentsEg[T any](
+	ctx context.Context,
+	funcs ...func(context.Context) (T, error),
+) ([]T, error) {
 	results := make([]T, len(funcs))
 	eg, ctx := errgroup.WithContext(ctx)
 	for index, f := range funcs {
-		safeGoEg(ctx, eg, f, &results[index])
+		SafeGoEg(ctx, eg, f, &results[index])
 	}
 	if err := eg.Wait(); err != nil {
 		return results, err
@@ -92,8 +106,8 @@ func RunConcurrent2Eg[T1, T2 any](
 ) (util.Tuple2[T1, T2], error) {
 	res := util.Tuple2[T1, T2]{}
 	eg, ctx := errgroup.WithContext(ctx)
-	safeGoEg(ctx, eg, f1, &res.X1)
-	safeGoEg(ctx, eg, f2, &res.X2)
+	SafeGoEg(ctx, eg, f1, &res.X1)
+	SafeGoEg(ctx, eg, f2, &res.X2)
 	err := eg.Wait()
 	return res, err
 }
