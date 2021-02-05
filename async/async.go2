@@ -2,7 +2,9 @@ package async
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"time"
 
 	"github.com/pvillela/go-trygo2/util"
 	"golang.org/x/sync/errgroup"
@@ -18,6 +20,21 @@ type ResultWithError[T any] struct {
 
 /////////////////////
 // SafeGo
+
+func safeGoCh[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+	pResult *ResultWithError[T],
+) chan struct{} {
+	ch := make(chan struct{})
+	fs := util.SafeFunc1E(f)
+	go func() {
+		defer close(ch)
+		res, err := fs(ctx)
+		*pResult = ResultWithError[T]{res, err}
+	}()
+	return ch
+}
 
 // safeGoMx is only used in the implementation of Async.
 // It launches f as a saparate goroutine and puts its result in the struct pointed to by
@@ -138,6 +155,16 @@ type Promise[T any] interface {
 	Await() (T, error)
 }
 
+type promiseCh[T any] struct {
+	ResWE ResultWithError[T] // can't use embedded struct with go2go
+	Ch    chan struct{}
+}
+
+func (p *promiseCh[T]) Await() (T, error) {
+	<-p.Ch
+	return p.ResWE.Value, p.ResWE.Error
+}
+
 type promiseMx[T any] struct {
 	ResWE ResultWithError[T] // can't use embedded struct with go2go
 	Lock  sync.Locker
@@ -170,6 +197,17 @@ func (p *promiseWg[T]) Await() (T, error) {
 }
 
 func Async[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+) Promise[T] {
+	promise := new(promiseCh[T])
+	pResWE := &promise.ResWE
+	ch := safeGoCh(ctx, f, pResWE)
+	promise.Ch = ch
+	return promise
+}
+
+func AsyncMx[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 ) Promise[T] {
@@ -244,4 +282,23 @@ func AsyncsWg[T any](
 		return RunConcurrentsWg[T](ctx, funcs...), nil
 	}
 	return Async(ctx, f)
+}
+
+func RunInBackgroundWithTimeout[T any](
+	ctx context.Context,
+	timeout time.Duration,
+	errorHandler func(error),
+	f func(context.Context) (T, error),
+) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	res := new(ResultWithError[T])
+	ch := safeGoCh(ctx, f, res)
+	select {
+	case <-ctx.Done():
+		var zero T
+		return zero, errors.New("timeout")
+	case <-ch:
+		return (*res).Value, (*res).Error
+	}
 }

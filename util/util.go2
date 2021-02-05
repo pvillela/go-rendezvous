@@ -1,10 +1,12 @@
 package util
 
 import (
+	"context"
 	"fmt"
+	"time"
 )
 
-type Unit struct{}
+type Unit = struct{}
 
 type ErrorOf struct {
 	Value interface{}
@@ -129,4 +131,13 @@ func SafeFunc2[T1, T2, U any](f func(T1, T2) U) func(T1, T2) (U, error) {
 func SafeFunc2V[T1, T2 any](f func(T1, T2)) func(T1, T2) error {
 	fe := func(t1 T1, t2 T2) error { f(t1, t2); return nil }
 	return SafeFunc2VE(fe)
+}
+
+func RunWithTimeout[T any](
+	ctx context.Context,
+	timeout time.Duration,
+	f func(context.Context) (T, error),
+) (T, error) {
+	ctx, _ = context.WithTimeout(ctx, timeout)
+	return f(ctx)
 }
