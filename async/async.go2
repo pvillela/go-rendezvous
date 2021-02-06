@@ -28,14 +28,20 @@ type ResultWithError[T any] struct {
 // completion of an asynchronous operation while paying attention to the context's deadline.
 // See its Wait() method.
 type Waiter struct {
-	ctx context.Context
-	ch  chan error
+	ctx    context.Context
+	cancel func()
+	ch     chan error
 }
 
 // Wait waits on both the ch error channel field in the receiver and the Done() channel in the
 // ctx context field in the receiver.  If ctx.Done() happens first then this method returns
 // a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in ch.
 func (w Waiter) Wait() error {
+	defer func() {
+		if w.cancel != nil {
+			w.cancel()
+		}
+	}()
 	select {
 	case err := <-w.ch:
 		return err
@@ -45,7 +51,7 @@ func (w Waiter) Wait() error {
 }
 
 func WaiterForCh(ctx context.Context, ch chan error) Waiter {
-	return Waiter{ctx, ch}
+	return Waiter{ctx, nil, ch}
 }
 
 func WaiterForWg(ctx context.Context, wg *sync.WaitGroup) Waiter {
@@ -54,7 +60,7 @@ func WaiterForWg(ctx context.Context, wg *sync.WaitGroup) Waiter {
 		defer close(ch)
 		wg.Wait()
 	}()
-	return Waiter{ctx, ch}
+	return Waiter{ctx, nil, ch}
 }
 
 // WaiterForEg creates a Waiter for use with error groups.
@@ -78,7 +84,7 @@ func WaiterForEg(parentCtx context.Context, cancel func(), eg *errgroup.Group) W
 			cancel()
 		}
 	}()
-	return Waiter{parentCtx, ch}
+	return Waiter{parentCtx, cancel, ch}
 }
 
 /////////////////////
