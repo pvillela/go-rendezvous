@@ -3,12 +3,15 @@ package async
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/pvillela/go-trygo2/util"
 	"golang.org/x/sync/errgroup"
 )
+
+type Unit = util.Unit
 
 /////////////////////
 // ResultWithError
@@ -18,75 +21,103 @@ type ResultWithError[T any] struct {
 	Error error
 }
 
-type TimeoutError struct{}
+/////////////////////
+// Waiter
 
-func (err TimeoutError) Error() string {
-	return "exceeded timeout"
+type Waiter interface {
+	Wait() error
 }
 
-type CancellationError struct{}
+type channelWaiter struct {
+	Ch chan Unit
+}
 
-func (err CancellationError) Error() string {
-	return "context cancelled"
+func (w channelWaiter) Wait() error {
+	<-w.Ch
+	return nil
+}
+
+func WaiterForCh(ch chan Unit) Waiter {
+	return channelWaiter{ch}
+}
+
+type waitGroupWaiter struct {
+	Wg *sync.WaitGroup
+}
+
+func (w waitGroupWaiter) Wait() error {
+	w.Wg.Wait()
+	return nil
+}
+
+func WaiterForWg(wg *sync.WaitGroup) Waiter {
+	return waitGroupWaiter{wg}
+}
+
+type errorGroupWaiter struct {
+	Eg *errgroup.Group
+}
+
+func (w errorGroupWaiter) Wait() error {
+	return w.Eg.Wait()
+}
+
+func WaiterForEg(eg *errgroup.Group) Waiter {
+	return errorGroupWaiter{eg}
+}
+
+type TimeoutError struct {
+	Timeout time.Duration
+}
+
+func (err TimeoutError) Error() string {
+	return fmt.Sprintf("exceeded timeout of #v", err.Timeout)
+}
+
+type timeoutWaiter struct {
+	Waiter  Waiter
+	Timeout time.Duration
+}
+
+func (w timeoutWaiter) Wait() error {
+	c := make(chan Unit)
+	pErr := new(error)
+	go func() {
+		defer close(c)
+		*pErr = w.Waiter.Wait()
+	}()
+	select {
+	case <-c:
+		return *pErr // completed normally
+	case <-time.After(w.Timeout):
+		return TimeoutError{w.Timeout} // timed out
+	}
+}
+
+func WaiterWithTimeout(w Waiter, timeout time.Duration) Waiter {
+	return timeoutWaiter{w, timeout}
 }
 
 /////////////////////
 // SafeGo
 
-// safeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
-// pResult.  Before using the result, a caller must wait on the channel returned by this
-// function.
+// safeGo launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.  Before using the result, a caller must wait on the returned Waiter.
 // If f panics, the panic value is converted to an error and set in the result.
-// If ctx times-out or is cancelled, the result will contain a zero value and either a
-// TimeoutError or a CancellationError.
-func safeGoCh[T any](
+func safeGo[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
-) chan struct{} {
-	ch := make(chan struct{})
-	defer close(ch)
+) Waiter {
+	ch := make(chan Unit)
+	waiter := WaiterForCh(ch)
 	fs := util.SafeFunc1E(f)
-	pfResult := &ResultWithError[T]{}
 	go func() {
 		defer close(ch)
 		res, err := fs(ctx)
-		*pfResult = ResultWithError[T]{res, err}
-	}()
-	select {
-	case <-ctx.Done():
-		var zero T
-		(*pResult).Value = zero
-		now := time.Now()
-		if deadline, ok := ctx.Deadline(); ok && (deadline.Before(now) || deadline.Equal(now)) {
-			(*pResult).Error = TimeoutError{}
-		} else {
-			(*pResult).Error = CancellationError{}
-		}
-	case <-ch:
-		*pResult = *pfResult
-	}
-	return ch
-}
-
-// safeGoMx is only used in the implementation of Async.
-// It launches f as a saparate goroutine and puts its result in the struct pointed to by
-// pResult.  Before using the result, a caller must acquire a lock on the returned sync.Locker.
-// If f panics, the panic value is converted to an error and set in the result.
-func safeGoMx[T any](
-	ctx context.Context,
-	f func(context.Context) (T, error),
-	pResult *ResultWithError[T],
-) sync.Locker {
-	lock := new(sync.RWMutex)
-	lock.Lock()
-	fs := util.SafeFunc1E(f)
-	go func() {
-		defer lock.Unlock()
-		res, err := fs(ctx)
 		*pResult = ResultWithError[T]{res, err}
 	}()
-	return lock.RLocker()
+	return waiter
 }
 
 // SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
@@ -195,17 +226,6 @@ type promiseCh[T any] struct {
 
 func (p *promiseCh[T]) Await() (T, error) {
 	<-p.Ch
-	return p.ResWE.Value, p.ResWE.Error
-}
-
-type promiseMx[T any] struct {
-	ResWE ResultWithError[T] // can't use embedded struct with go2go
-	Lock  sync.Locker
-}
-
-func (p *promiseMx[T]) Await() (T, error) {
-	defer p.Lock.Unlock()
-	p.Lock.Lock()
 	return p.ResWE.Value, p.ResWE.Error
 }
 
