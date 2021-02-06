@@ -138,6 +138,7 @@ func RunWithTimeout[T any](
 	timeout time.Duration,
 	f func(context.Context) (T, error),
 ) (T, error) {
-	ctx, _ = context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	return f(ctx)
 }

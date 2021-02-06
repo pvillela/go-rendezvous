@@ -2,13 +2,16 @@ package async
 
 import (
 	"context"
-	"errors"
 	"sync"
-	"time"
 
 	"github.com/pvillela/go-trygo2/util"
 	"golang.org/x/sync/errgroup"
 )
+
+/////////////////////
+// Unit
+
+type Unit = struct{}
 
 /////////////////////
 // ResultWithError
@@ -18,86 +21,98 @@ type ResultWithError[T any] struct {
 	Error error
 }
 
-type TimeoutError struct{}
+/////////////////////
+// Waiter
 
-func (err TimeoutError) Error() string {
-	return "exceeded timeout"
+// Waiter encapsulates a context.Context and a chan error.  It supports waiting on the
+// completion of an asynchronous operation while paying attention to the context's deadline.
+// See its Wait() method.
+type Waiter struct {
+	ctx context.Context
+	ch  chan error
 }
 
-type CancellationError struct{}
+// Wait waits on both the ch error channel field in the receiver and the Done() channel in the
+// ctx context field in the receiver.  If ctx.Done() happens first then this method returns
+// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in ch.
+func (w Waiter) Wait() error {
+	select {
+	case err := <-w.ch:
+		return err
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	}
+}
 
-func (err CancellationError) Error() string {
-	return "context cancelled"
+func WaiterForCh(ctx context.Context, ch chan error) Waiter {
+	return Waiter{ctx, ch}
+}
+
+func WaiterForWg(ctx context.Context, wg *sync.WaitGroup) Waiter {
+	ch := make(chan error)
+	go func() {
+		defer close(ch)
+		wg.Wait()
+	}()
+	return Waiter{ctx, ch}
+}
+
+// WaiterForEg creates a Waiter for use with error groups.
+//
+// parentCtx is the context from which the error group eg originated.
+//
+// cancel is the cancellation function for a child of parentCtx that was created specifically
+// to signal functions in the error group that one of the functions in the group returned an
+// error.  This is required because the context created by the errgroup.WithContext function
+// is not passed to the functions.  The reason for that is that the error group context
+// ignores the parent context's deadline and cancellation.  This way, the functions in the
+// error group will be notified if either the parent context times out or the parent context
+// is cancelled or the error group context is cancelled (due to an error in a peer function).
+func WaiterForEg(parentCtx context.Context, cancel func(), eg *errgroup.Group) Waiter {
+	ch := make(chan error)
+	go func() {
+		defer close(ch)
+		err := eg.Wait()
+		ch <- err
+		if err != nil {
+			cancel()
+		}
+	}()
+	return Waiter{parentCtx, ch}
 }
 
 /////////////////////
 // SafeGo
 
-// safeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
-// pResult.  Before using the result, a caller must wait on the channel returned by this
-// function.
+// SafeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.
+// Before using the result, a caller must wait on the Waiter returned by this function.
 // If f panics, the panic value is converted to an error and set in the result.
-// If ctx times-out or is cancelled, the result will contain a zero value and either a
-// TimeoutError or a CancellationError.
-func safeGoCh[T any](
+func SafeGoCh[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
-) chan struct{} {
-	ch := make(chan struct{})
-	defer close(ch)
+) Waiter {
+	ch := make(chan error)
 	fs := util.SafeFunc1E(f)
-	pfResult := &ResultWithError[T]{}
 	go func() {
 		defer close(ch)
 		res, err := fs(ctx)
-		*pfResult = ResultWithError[T]{res, err}
-	}()
-	select {
-	case <-ctx.Done():
-		var zero T
-		(*pResult).Value = zero
-		now := time.Now()
-		if deadline, ok := ctx.Deadline(); ok && (deadline.Before(now) || deadline.Equal(now)) {
-			(*pResult).Error = TimeoutError{}
-		} else {
-			(*pResult).Error = CancellationError{}
-		}
-	case <-ch:
-		*pResult = *pfResult
-	}
-	return ch
-}
-
-// safeGoMx is only used in the implementation of Async.
-// It launches f as a saparate goroutine and puts its result in the struct pointed to by
-// pResult.  Before using the result, a caller must acquire a lock on the returned sync.Locker.
-// If f panics, the panic value is converted to an error and set in the result.
-func safeGoMx[T any](
-	ctx context.Context,
-	f func(context.Context) (T, error),
-	pResult *ResultWithError[T],
-) sync.Locker {
-	lock := new(sync.RWMutex)
-	lock.Lock()
-	fs := util.SafeFunc1E(f)
-	go func() {
-		defer lock.Unlock()
-		res, err := fs(ctx)
 		*pResult = ResultWithError[T]{res, err}
 	}()
-	return lock.RLocker()
+	return WaiterForCh(ctx, ch)
 }
 
 // SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
-// pResult.  Before using the result, a caller must wait on the sync.WaitGroup wg.
+// pResult.
+// Before using the result, a caller must wait on the Waiter returned by this function..
 // If f panics, the panic value is converted to an error and set in the result.
 func SafeGoWg[T any](
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
-) {
+) Waiter {
 	wg.Add(1)
 	fs := util.SafeFunc1E(f)
 	go func() {
@@ -105,79 +120,120 @@ func SafeGoWg[T any](
 		res, err := fs(ctx)
 		*pResult = ResultWithError[T]{res, err}
 	}()
+	return WaiterForWg(ctx, wg)
 }
 
-// SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
-// pResult.  Before using the result, a caller must wait on eg.  If f panics, the panic value
-// is converted to an error and is fed to the errgroup.Group eg.
+// SafeGoEg launches f as a saparate goroutine and puts its non-error result in the struct
+// pointed to by pResult.
+// Before using the result, a caller must wait on the Waiter returned by this function..
+// If f panics, the panic value is converted to an error and set in the result.
+//
+// ctx is the parent context used in the call to errgroup.WithContext.
+//
+// This function creates a child context of ctx (with a cancellation function) that is passed
+// to f.  The cancellation function is used specifically
+// to signal functions in the error group that one of the functions in the group returned an
+// error.  This is required because the context created by the errgroup.WithContext function
+// is not passed to the functions.  The reason for that is that the error group context
+// ignores the parent context's deadline and cancellation.  This way, the functions in the
+// error group will be notified if either the parent context times out or the parent context
+// is cancelled or the error group context is cancelled (due to an error in a peer function).
 func SafeGoEg[T any](
 	ctx context.Context,
 	eg *errgroup.Group,
 	f func(context.Context) (T, error),
 	pResult *T,
-) {
+) Waiter {
+	ctx, cancel := context.WithCancel(ctx)
 	fs := util.SafeFunc1E(f)
 	eg.Go(func() error {
 		res, err := fs(ctx)
 		*pResult = res
 		return err
 	})
+	return WaiterForEg(ctx, cancel, eg)
 }
 
 /////////////////////
 // RunConcurrent
 
+// RunConcurrentsWg runs funcs concurrently and returns a slice containing the results of
+// the function executions once all functions complete normaly, with an error, or with a panic.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
 func RunConcurrentsWg[T any](
 	ctx context.Context,
 	funcs ...func(context.Context) (T, error),
-) []ResultWithError[T] {
+) ([]ResultWithError[T], error) {
 	results := make([]ResultWithError[T], len(funcs))
 	wg := new(sync.WaitGroup)
+	waiter := WaiterForWg(ctx, wg)
 	for index, f := range funcs {
 		SafeGoWg(ctx, wg, f, &results[index])
 	}
-	wg.Wait()
-	return results
+	err := waiter.Wait()
+	return results, err
 }
 
+// RunConcurrent2Wg runs funcs concurrently and returns a slice containing the results of
+// the function executions once all functions complete normaly, with an error, or with a panic.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
 func RunConcurrent2Wg[T1, T2 any](
 	ctx context.Context,
 	f1 func(context.Context) (T1, error),
 	f2 func(context.Context) (T2, error),
-) util.Tuple2[ResultWithError[T1], ResultWithError[T2]] {
+) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
 	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
 	wg := new(sync.WaitGroup)
+	waiter := WaiterForWg(ctx, wg)
 	SafeGoWg(ctx, wg, f1, &results.X1)
 	SafeGoWg(ctx, wg, f2, &results.X2)
-	wg.Wait()
-	return results
+	err := waiter.Wait()
+	return results, err
 }
 
+// RunConcurrentsEg runs funcs concurrently and returns a slice containing the non-error results
+// of the function executions if all functions complete normaly.  If any of the functions
+// returns an error or panics, this function returns early, with the first error encountered.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
 func RunConcurrentsEg[T any](
 	ctx context.Context,
 	funcs ...func(context.Context) (T, error),
 ) ([]T, error) {
 	results := make([]T, len(funcs))
-	eg, ctx := errgroup.WithContext(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	eg, _ := errgroup.WithContext(ctx)
+	waiter := WaiterForEg(ctx, cancel, eg)
 	for index, f := range funcs {
 		SafeGoEg(ctx, eg, f, &results[index])
 	}
-	if err := eg.Wait(); err != nil {
-		return results, err
-	}
-	return results, nil
+	err := waiter.Wait()
+	return results, err
 }
 
+// RunConcurrent2Eg runs funcs concurrently and returns a slice containing the non-error results
+// of the function executions if all functions complete normaly.  If any of the functions
+// returns an error or panics, this function returns early, with the first error encountered.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
 func RunConcurrent2Eg[T1, T2 any](
 	ctx context.Context,
 	f1 func(context.Context) (T1, error),
 	f2 func(context.Context) (T2, error),
 ) (util.Tuple2[T1, T2], error) {
 	res := util.Tuple2[T1, T2]{}
-	eg, ctx := errgroup.WithContext(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	eg, _ := errgroup.WithContext(ctx)
+	waiter := WaiterForEg(ctx, cancel, eg)
 	SafeGoEg(ctx, eg, f1, &res.X1)
 	SafeGoEg(ctx, eg, f2, &res.X2)
-	err := eg.Wait()
+	err := waiter.Wait()
 	return res, err
 }
 
@@ -188,91 +244,29 @@ type Promise[T any] interface {
 	Await() (T, error)
 }
 
-type promiseCh[T any] struct {
-	ResWE ResultWithError[T] // can't use embedded struct with go2go
-	Ch    chan struct{}
+type PromiseImpl[T any] struct {
+	ResWE  ResultWithError[T] // can't use embedded struct with go2go
+	Waiter Waiter
 }
 
-func (p *promiseCh[T]) Await() (T, error) {
-	<-p.Ch
-	return p.ResWE.Value, p.ResWE.Error
-}
-
-type promiseMx[T any] struct {
-	ResWE ResultWithError[T] // can't use embedded struct with go2go
-	Lock  sync.Locker
-}
-
-func (p *promiseMx[T]) Await() (T, error) {
-	defer p.Lock.Unlock()
-	p.Lock.Lock()
-	return p.ResWE.Value, p.ResWE.Error
-}
-
-type promiseEg[T any] struct {
-	Value T
-	Eg    *errgroup.Group
-}
-
-func (p *promiseEg[T]) Await() (T, error) {
-	err := p.Eg.Wait()
-	return p.Value, err
-}
-
-type promiseWg[T any] struct {
-	ResWE ResultWithError[T] // can't use embedded struct with go2go
-	Wg    *sync.WaitGroup
-}
-
-func (p *promiseWg[T]) Await() (T, error) {
-	p.Wg.Wait()
-	return p.ResWE.Value, p.ResWE.Error
+func (p *PromiseImpl[T]) Await() (T, error) {
+	errW := p.Waiter.Wait()
+	value := p.ResWE.Value
+	err := p.ResWE.Error
+	if errW != nil {
+		err = errW
+	}
+	return value, err
 }
 
 func Async[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 ) Promise[T] {
-	promise := new(promiseCh[T])
-	pResWE := &promise.ResWE
-	ch := safeGoCh(ctx, f, pResWE)
-	promise.Ch = ch
-	return promise
-}
-
-func AsyncMx[T any](
-	ctx context.Context,
-	f func(context.Context) (T, error),
-) Promise[T] {
-	promise := new(promiseMx[T])
-	pResWE := &promise.ResWE
-	lock := safeGoMx(ctx, f, pResWE)
-	promise.Lock = lock
-	return promise
-}
-
-func AsyncOnEg[T any](
-	ctx context.Context,
-	eg *errgroup.Group,
-	f func(ctx context.Context) (T, error),
-) Promise[T] {
-	promise := new(promiseEg[T])
-	pRes := &promise.Value
-	SafeGoEg(ctx, eg, f, pRes)
-	promise.Eg = eg
-	return promise
-}
-
-func AsyncOnWg[T any](
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	f func(ctx context.Context) (T, error),
-) Promise[T] {
-	promise := new(promiseWg[T])
-	pResWE := &promise.ResWE
-	SafeGoWg(ctx, wg, f, pResWE)
-	promise.Wg = wg
-	return promise
+	promImpl := PromiseImpl[T]{}
+	pResWE := &promImpl.ResWE
+	promImpl.Waiter = SafeGoCh(ctx, f, pResWE)
+	return &promImpl
 }
 
 func Async2Eg[T1 any, T2 any](
@@ -302,7 +296,7 @@ func Async2Wg[T1 any, T2 any](
 	f2 func(ctx context.Context) (T2, error),
 ) Promise[util.Tuple2[ResultWithError[T1], ResultWithError[T2]]] {
 	f := func(ctx context.Context) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
-		return RunConcurrent2Wg[T1, T2](ctx, f1, f2), nil
+		return RunConcurrent2Wg[T1, T2](ctx, f1, f2)
 	}
 	return Async(ctx, f)
 }
@@ -312,26 +306,21 @@ func AsyncsWg[T any](
 	funcs ...func(ctx context.Context) (T, error),
 ) Promise[[]ResultWithError[T]] {
 	f := func(ctx context.Context) ([]ResultWithError[T], error) {
-		return RunConcurrentsWg[T](ctx, funcs...), nil
+		return RunConcurrentsWg[T](ctx, funcs...)
 	}
 	return Async(ctx, f)
 }
 
-func RunInBackgroundWithTimeout[T any](
+func RunInBackground[T any](
 	ctx context.Context,
-	timeout time.Duration,
-	errorHandler func(error),
 	f func(context.Context) (T, error),
+	errorHandler func(error),
 ) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	res := new(ResultWithError[T])
-	ch := safeGoCh(ctx, f, res)
-	select {
-	case <-ctx.Done():
-		var zero T
-		return zero, errors.New("timeout")
-	case <-ch:
-		return (*res).Value, (*res).Error
+	f1 := func(ctx context.Context) (T, error) {
+		res, err := f(ctx)
+		errorHandler(err)
+		return res, err
 	}
+	promise := Async(ctx, f1)
+	return promise.Await()
 }

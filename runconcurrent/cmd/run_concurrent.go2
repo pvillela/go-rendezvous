@@ -44,8 +44,8 @@ func main() {
 	ctx := context.Background()
 
 	fmt.Println("*** RunConcurrentsWg 1234")
-	resultsWg := async.RunConcurrentsWg(ctx, f1, f2, f3, f4)
-	fmt.Println(resultsWg)
+	resultsWg, err := async.RunConcurrentsWg(ctx, f1, f2, f3, f4)
+	fmt.Println(resultsWg, err)
 
 	fmt.Println("*** RunConcurrentsEg 1234")
 	resultsEg, err := async.RunConcurrentsEg(ctx, f1, f2, f3, f4)
@@ -64,15 +64,15 @@ func main() {
 	fmt.Println(resultsEg, err)
 
 	fmt.Println("*** RunConcurrent2Wg 12")
-	result2Wg := async.RunConcurrent2Wg(ctx, f1, f2)
+	result2Wg, err := async.RunConcurrent2Wg(ctx, f1, f2)
 	fmt.Println(result2Wg, err)
 
 	fmt.Println("*** RunConcurrent2Wg 13")
-	result2Wg = async.RunConcurrent2Wg(ctx, f1, f3)
+	result2Wg, err = async.RunConcurrent2Wg(ctx, f1, f3)
 	fmt.Println(result2Wg, err)
 
 	fmt.Println("*** RunConcurrent2Wg 14")
-	result2Wg = async.RunConcurrent2Wg(ctx, f1, f4)
+	result2Wg, err = async.RunConcurrent2Wg(ctx, f1, f4)
 	fmt.Println(result2Wg, err)
 
 	fmt.Println("*** RunConcurrent2Eg 12")
