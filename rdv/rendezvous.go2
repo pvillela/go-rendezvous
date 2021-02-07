@@ -1,0 +1,454 @@
+package rdv
+
+import (
+	"context"
+	"sync"
+
+	"github.com/pvillela/go-trygo2/util"
+	"golang.org/x/sync/errgroup"
+)
+
+/**********************************************************************
+******* FIX DOC COMMENTS
+ */
+
+/////////////////////
+// Unit
+
+type Unit = struct{}
+
+/////////////////////
+// ResultWithError
+
+type ResultWithError[T any] struct {
+	Value T
+	Error error
+}
+
+type RdvData[T any] struct {
+	Value    T
+	Error    error
+	ChanOpen bool
+}
+
+type Rdv[T any] chan RdvData[T]
+
+func (rdv Rdv[T]) Receive() (T, error) {
+	data := <-rdv
+	if !data.ChanOpen {
+		panic("attempt to get data from closed rendezvous channel")
+	}
+	return data.Value, data.Error
+}
+
+func (rdv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
+	data := RdvData[T]{}
+	select {
+	case data = <-rdv:
+		if !data.ChanOpen {
+			panic("attempt to get data from closed rendezvous channel")
+		}
+	case <-ctx.Done():
+		data.Error = ctx.Err()
+	}
+	return data.Value, data.Error
+}
+
+func (rdv Rdv[T]) ReceiveCtxWg(ctx context.Context, wg *sync.WaitGroup) (T, error) {
+}
+
+func (rdv Rdv[T]) ReceiveCtxEg(ctx context.Context, eg *errgroup.Group) (T, error) {
+}
+
+func (rdv Rdv[T]) Send(value T, err error) {
+	data := RdvData[T]{value, err, true}
+	rdv <- data
+}
+
+func (rdv Rdv[T]) Go(f func() (T, error)) {
+	go func() {
+		defer close(rdv)
+		fs := util.SafeFunc0E(f)
+		res, err := fs()
+		rdv.Send(res, err)
+	}()
+}
+
+func (rdv Rdv[T]) GoWg(wg *sync.WaitGroup, f func() (T, error)) {
+}
+
+func (rdv Rdv[T]) GoEg(wg *errgroup.Group, f func() (T, error)) {
+}
+
+/////////////////////
+// Waiter
+
+// type Waiter interface {
+// 	Wait() error
+// }
+
+// preWaiter encapsulates a context.Context and a chan error.  It supports waiting on the
+// completion of an asynchronous operation while paying attention to the context's deadline.
+// See its Wait() method.
+type preWaiter struct {
+	Ctx        context.Context
+	WaitCh     chan error
+	ActiveGate chan bool
+	WaitChGate *sync.Once
+	Err        error
+}
+
+// ErrWait waits on both the WaitCh channel field in the receiver and the Done() channel in the
+// Ctx context field in the receiver.  If Ctx.Done() happens first then this method returns
+// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in WaitCh.
+func (w preWaiter) ErrWait() error {
+	// fmt.Println("%%% entered ErrWait")
+	w.WaitChGate.Do(func() {
+		// fmt.Println("%%% in WaitChGate")
+		err := w.Err
+		select {
+		case errW := <-w.WaitCh:
+			err = errW
+		case <-w.Ctx.Done():
+			err = w.Ctx.Err()
+		}
+		w.Err = err
+	})
+	return w.Err
+}
+
+type SingleWaiter struct {
+	P       preWaiter // embedded structs not supported by go2go
+	ComplCh chan Unit
+}
+
+func MakeSingleWaiter(ctx context.Context) SingleWaiter {
+	complCh := make(chan Unit)
+	waitCh := make(chan error)
+	activeGate := make(chan bool, 1)
+	activeGate <- true
+	waitChGate := new(sync.Once)
+	return SingleWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, complCh}
+}
+
+func (w SingleWaiter) Wait() error {
+	// fmt.Println("%%% entered Wait")
+	if active := <-w.P.ActiveGate; active {
+		// fmt.Println("%%% executing ActiveGate")
+		close(w.P.ActiveGate)
+		go func() {
+			<-w.ComplCh
+			close(w.P.WaitCh)
+		}()
+	}
+	return w.P.ErrWait()
+}
+
+type WgWaiter struct {
+	P  preWaiter // embedded structs not supported by go2go
+	Wg *sync.WaitGroup
+}
+
+func MakeWgWaiter(ctx context.Context) WgWaiter {
+	wg := new(sync.WaitGroup)
+	waitCh := make(chan error)
+	activeGate := make(chan bool, 1)
+	activeGate <- true
+	waitChGate := new(sync.Once)
+	return WgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, wg}
+}
+
+func (w WgWaiter) Wait() error {
+	if active := <-w.P.ActiveGate; active {
+		close(w.P.ActiveGate)
+		go func() {
+			w.Wg.Wait()
+			close(w.P.WaitCh)
+		}()
+	}
+	return w.P.ErrWait()
+}
+
+type EgWaiter struct {
+	P      preWaiter // embedded structs not supported by go2go
+	Eg     *errgroup.Group
+	Cancel func()
+}
+
+// MakeEgWaiter creates an errgroup.Group encapsulated in a Waiter for use with error groups.
+func MakeEgWaiter(ctx context.Context) EgWaiter {
+	eg, _ := errgroup.WithContext(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	waitCh := make(chan error)
+	activeGate := make(chan bool, 1)
+	activeGate <- true
+	waitChGate := new(sync.Once)
+	return EgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, eg, cancel}
+}
+
+func (w EgWaiter) Wait() error {
+	if active := <-w.P.ActiveGate; active {
+		close(w.P.ActiveGate)
+		go func() {
+			err := w.Eg.Wait()
+			w.P.WaitCh <- err
+			if err != nil {
+				w.Cancel()
+			}
+			close(w.P.WaitCh)
+		}()
+	}
+	return w.P.ErrWait()
+}
+
+/////////////////////
+// SafeGo
+
+// SafeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.
+// Before using the result, a caller must wait on the Waiter returned by this function.
+// If f panics, the panic value is converted to an error and set in the result.
+func SafeGoCh[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+	pResult *ResultWithError[T],
+) SingleWaiter {
+	w := MakeSingleWaiter(ctx)
+	// fmt.Println("%%%% entered SafeGoCh")
+	if active := <-w.P.ActiveGate; active {
+		// fmt.Println("%%%% in active portion of SafeGoCh")
+		defer func() { w.P.ActiveGate <- true }() // keep it active
+		fs := util.SafeFunc1E(f)
+		go func() {
+			res, err := fs(w.P.Ctx)
+			// fmt.Println("%%%% res, err :=", res, err)
+			*pResult = ResultWithError[T]{res, err}
+			close(w.ComplCh)
+		}()
+	} else {
+		panic("attemp to add goroutine to inactive waiter")
+	}
+	return w
+}
+
+// SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
+// pResult.
+// Before using the result, a caller must wait on the Waiter returned by this function..
+// If f panics, the panic value is converted to an error and set in the result.
+func SafeGoWg[T any](
+	w WgWaiter,
+	f func(context.Context) (T, error),
+	pResult *ResultWithError[T],
+) {
+	if active := <-w.P.ActiveGate; active {
+		defer func() { w.P.ActiveGate <- true }() // keep it active
+		w.Wg.Add(1)
+		fs := util.SafeFunc1E(f)
+		go func() {
+			defer w.Wg.Done()
+			res, err := fs(w.P.Ctx)
+			*pResult = ResultWithError[T]{res, err}
+		}()
+	} else {
+		panic("attemp to add goroutine to inactive waiter")
+	}
+}
+
+// SafeGoEg launches f as a saparate goroutine and puts its non-error result in the struct
+// pointed to by pResult.
+// Before using the result, a caller must wait on the Waiter returned by this function..
+// If f panics, the panic value is converted to an error and set in the result.
+//
+// Ctx is the parent context used in the call to errgroup.WithContext.
+//
+// This function creates a child context of Ctx (with a cancellation function) that is passed
+// to f.  The cancellation function is used specifically
+// to signal functions in the error group that one of the functions in the group returned an
+// error.  This is required because the context created by the errgroup.WithContext function
+// is not passed to the functions.  The reason for that is that the error group context
+// ignores the parent context's deadline and cancellation.  This way, the functions in the
+// error group will be notified if either the parent context times out or the parent context
+// is cancelled or the error group context is cancelled (due to an error in a peer function).
+func SafeGoEg[T any](
+	w EgWaiter,
+	f func(context.Context) (T, error),
+	pResult *T,
+) {
+	if active := <-w.P.ActiveGate; active {
+		defer func() { w.P.ActiveGate <- true }() // keep it active
+		fs := util.SafeFunc1E(f)
+		w.Eg.Go(func() error {
+			res, err := fs(w.P.Ctx)
+			*pResult = res
+			return err
+		})
+	} else {
+		panic("attemp to add goroutine to inactive waiter")
+	}
+}
+
+/////////////////////
+// RunConcurrent
+
+// RunConcurrentsWg runs funcs concurrently and returns a slice containing the results of
+// the function executions once all functions complete normaly, with an error, or with a panic.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
+func RunConcurrentsWg[T any](
+	ctx context.Context,
+	funcs ...func(context.Context) (T, error),
+) ([]ResultWithError[T], error) {
+	results := make([]ResultWithError[T], len(funcs))
+	waiter := MakeWgWaiter(ctx)
+	for index, f := range funcs {
+		SafeGoWg(waiter, f, &results[index])
+	}
+	err := waiter.Wait()
+	return results, err
+}
+
+// RunConcurrent2Wg runs funcs concurrently and returns a slice containing the results of
+// the function executions once all functions complete normaly, with an error, or with a panic.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
+func RunConcurrent2Wg[T1, T2 any](
+	ctx context.Context,
+	f1 func(context.Context) (T1, error),
+	f2 func(context.Context) (T2, error),
+) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
+	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
+	waiter := MakeWgWaiter(ctx)
+	SafeGoWg(waiter, f1, &results.X1)
+	SafeGoWg(waiter, f2, &results.X2)
+	err := waiter.Wait()
+	return results, err
+}
+
+// RunConcurrentsEg runs funcs concurrently and returns a slice containing the non-error results
+// of the function executions if all functions complete normaly.  If any of the functions
+// returns an error or panics, this function returns early, with the first error encountered.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
+func RunConcurrentsEg[T any](
+	ctx context.Context,
+	funcs ...func(context.Context) (T, error),
+) ([]T, error) {
+	results := make([]T, len(funcs))
+	waiter := MakeEgWaiter(ctx)
+	for index, f := range funcs {
+		SafeGoEg(waiter, f, &results[index])
+	}
+	err := waiter.Wait()
+	return results, err
+}
+
+// RunConcurrent2Eg runs funcs concurrently and returns a slice containing the non-error results
+// of the function executions if all functions complete normaly.  If any of the functions
+// returns an error or panics, this function returns early, with the first error encountered.
+// Panics in function executions are converted to errors.
+// In case of a context timeout or cancellation, this functionn returns early with a
+// TimeoutError or CancellationError.
+func RunConcurrent2Eg[T1, T2 any](
+	ctx context.Context,
+	f1 func(context.Context) (T1, error),
+	f2 func(context.Context) (T2, error),
+) (util.Tuple2[T1, T2], error) {
+	res := util.Tuple2[T1, T2]{}
+	waiter := MakeEgWaiter(ctx)
+	SafeGoEg(waiter, f1, &res.X1)
+	SafeGoEg(waiter, f2, &res.X2)
+	err := waiter.Wait()
+	return res, err
+}
+
+/////////////////////
+// Promise
+
+type Promise[T any] interface {
+	Await() (T, error)
+}
+
+type PromiseImpl[T any] struct {
+	ResWE  ResultWithError[T] // can't use embedded struct with go2go
+	Waiter SingleWaiter
+}
+
+func (P *PromiseImpl[T]) Await() (T, error) {
+	// fmt.Println("%%% about to wait")
+	errW := P.Waiter.Wait()
+	value := P.ResWE.Value
+	err := P.ResWE.Error
+	if errW != nil {
+		err = errW
+	}
+	return value, err
+}
+
+func Async[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+) Promise[T] {
+	promImpl := PromiseImpl[T]{}
+	pResWE := &promImpl.ResWE
+	promImpl.Waiter = SafeGoCh(ctx, f, pResWE)
+	return &promImpl
+}
+
+func Async2Eg[T1 any, T2 any](
+	ctx context.Context,
+	f1 func(ctx context.Context) (T1, error),
+	f2 func(ctx context.Context) (T2, error),
+) Promise[util.Tuple2[T1, T2]] {
+	f := func(ctx context.Context) (util.Tuple2[T1, T2], error) {
+		return RunConcurrent2Eg[T1, T2](ctx, f1, f2)
+	}
+	return Async(ctx, f)
+}
+
+func AsyncsEg[T any](
+	ctx context.Context,
+	funcs ...func(ctx context.Context) (T, error),
+) Promise[[]T] {
+	f := func(ctx context.Context) ([]T, error) {
+		return RunConcurrentsEg[T](ctx, funcs...)
+	}
+	return Async(ctx, f)
+}
+
+func Async2Wg[T1 any, T2 any](
+	ctx context.Context,
+	f1 func(ctx context.Context) (T1, error),
+	f2 func(ctx context.Context) (T2, error),
+) Promise[util.Tuple2[ResultWithError[T1], ResultWithError[T2]]] {
+	f := func(ctx context.Context) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
+		return RunConcurrent2Wg[T1, T2](ctx, f1, f2)
+	}
+	return Async(ctx, f)
+}
+
+func AsyncsWg[T any](
+	ctx context.Context,
+	funcs ...func(ctx context.Context) (T, error),
+) Promise[[]ResultWithError[T]] {
+	f := func(ctx context.Context) ([]ResultWithError[T], error) {
+		return RunConcurrentsWg[T](ctx, funcs...)
+	}
+	return Async(ctx, f)
+}
+
+func RunInBackground[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+	errorHandler func(error),
+) (T, error) {
+	f1 := func(ctx context.Context) (T, error) {
+		res, err := f(ctx)
+		errorHandler(err)
+		return res, err
+	}
+	promise := Async(ctx, f1)
+	return promise.Await()
+}
