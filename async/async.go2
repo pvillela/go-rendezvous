@@ -28,122 +28,122 @@ type ResultWithError[T any] struct {
 /////////////////////
 // Waiter
 
-type Waiter interface {
-	Wait() error
-}
+// type Waiter interface {
+// 	Wait() error
+// }
 
 // preWaiter encapsulates a context.Context and a chan error.  It supports waiting on the
 // completion of an asynchronous operation while paying attention to the context's deadline.
 // See its Wait() method.
 type preWaiter struct {
-	ctx       context.Context
-	errCh     chan error
-	activeCh  chan bool
-	errWaitCh chan bool
-	err       error
+	Ctx        context.Context
+	WaitCh     chan error
+	ActiveGate chan bool
+	WaitChGate *sync.Once
+	Err        error
 }
 
-// Wait waits on both the ch error channel field in the receiver and the Done() channel in the
-// ctx context field in the receiver.  If ctx.Done() happens first then this method returns
-// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in ch.
-
-// TODO: need to cache result so that multiple calls to preWait all return the same value.
-
-func (w preWaiter) errWait() error {
-	if wait := <-w.errWaitCh; wait {
-		defer close(w.errWaitCh)
-		err := w.err
+// ErrWait waits on both the WaitCh channel field in the receiver and the Done() channel in the
+// Ctx context field in the receiver.  If Ctx.Done() happens first then this method returns
+// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in WaitCh.
+func (w preWaiter) ErrWait() error {
+	// fmt.Println("%%% entered ErrWait")
+	w.WaitChGate.Do(func() {
+		// fmt.Println("%%% in WaitChGate")
+		err := w.Err
 		select {
-		case errW := <-w.errCh:
+		case errW := <-w.WaitCh:
 			err = errW
-		case <-w.ctx.Done():
-			err = w.ctx.Err()
+		case <-w.Ctx.Done():
+			err = w.Ctx.Err()
 		}
-		w.err = err
+		w.Err = err
+	})
+	return w.Err
+}
+
+type SingleWaiter struct {
+	P       preWaiter // embedded structs not supported by go2go
+	ComplCh chan Unit
+}
+
+func MakeSingleWaiter(ctx context.Context) SingleWaiter {
+	complCh := make(chan Unit)
+	waitCh := make(chan error)
+	activeGate := make(chan bool, 1)
+	activeGate <- true
+	waitChGate := new(sync.Once)
+	return SingleWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, complCh}
+}
+
+func (w SingleWaiter) Wait() error {
+	// fmt.Println("%%% entered Wait")
+	if active := <-w.P.ActiveGate; active {
+		// fmt.Println("%%% executing ActiveGate")
+		close(w.P.ActiveGate)
+		go func() {
+			<-w.ComplCh
+			close(w.P.WaitCh)
+		}()
 	}
-	return w.err
-}
-
-func (w preWaiter) close() {
-	if active := <-w.activeCh; active {
-		close(w.activeCh)
-	}
-}
-
-type ChWaiter struct {
-	preWaiter
-}
-
-func MakeChWaiter(ctx context.Context) ChWaiter {
-	errCh := make(chan error)
-	activeCh := make(chan bool, 1)
-	activeCh <- true
-	errWaitCh := make(chan bool, 1)
-	errWaitCh <- true
-	return ChWaiter{preWaiter{ctx, errCh, activeCh, errWaitCh, nil}}
-}
-
-func (w ChWaiter) Wait() error {
-	defer close(w.errCh)
-	w.close()
-	return w.errWait()
+	return w.P.ErrWait()
 }
 
 type WgWaiter struct {
-	preWaiter
-	wg *sync.WaitGroup
+	P  preWaiter // embedded structs not supported by go2go
+	Wg *sync.WaitGroup
 }
 
 func MakeWgWaiter(ctx context.Context) WgWaiter {
 	wg := new(sync.WaitGroup)
-	errCh := make(chan error)
-	activeCh := make(chan bool, 1)
-	activeCh <- true
-	errWaitCh := make(chan bool, 1)
-	errWaitCh <- true
-	return WgWaiter{preWaiter{ctx, errCh, activeCh, errWaitCh, nil}, wg}
+	waitCh := make(chan error)
+	activeGate := make(chan bool, 1)
+	activeGate <- true
+	waitChGate := new(sync.Once)
+	return WgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, wg}
 }
 
 func (w WgWaiter) Wait() error {
-	defer close(w.errCh)
-	w.close()
-	go func() {
-		defer close(w.errCh)
-		w.wg.Wait()
-	}()
-	return w.errWait()
+	if active := <-w.P.ActiveGate; active {
+		close(w.P.ActiveGate)
+		go func() {
+			w.Wg.Wait()
+			close(w.P.WaitCh)
+		}()
+	}
+	return w.P.ErrWait()
 }
 
 type EgWaiter struct {
-	preWaiter
-	eg     *errgroup.Group
-	cancel func()
+	P      preWaiter // embedded structs not supported by go2go
+	Eg     *errgroup.Group
+	Cancel func()
 }
 
 // MakeEgWaiter creates an errgroup.Group encapsulated in a Waiter for use with error groups.
 func MakeEgWaiter(ctx context.Context) EgWaiter {
 	eg, _ := errgroup.WithContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
-	errCh := make(chan error)
-	activeCh := make(chan bool, 1)
-	activeCh <- true
-	errWaitCh := make(chan bool, 1)
-	errWaitCh <- true
-	return EgWaiter{preWaiter{ctx, errCh, activeCh, errWaitCh, nil}, eg, cancel}
+	waitCh := make(chan error)
+	activeGate := make(chan bool, 1)
+	activeGate <- true
+	waitChGate := new(sync.Once)
+	return EgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, eg, cancel}
 }
 
 func (w EgWaiter) Wait() error {
-	defer close(w.errCh)
-	w.close()
-	go func() {
-		defer close(w.errCh)
-		err := w.eg.Wait()
-		w.errCh <- err
-		if err != nil {
-			w.cancel()
-		}
-	}()
-	return w.errWait()
+	if active := <-w.P.ActiveGate; active {
+		close(w.P.ActiveGate)
+		go func() {
+			err := w.Eg.Wait()
+			w.P.WaitCh <- err
+			if err != nil {
+				w.Cancel()
+			}
+			close(w.P.WaitCh)
+		}()
+	}
+	return w.P.ErrWait()
 }
 
 /////////////////////
@@ -151,22 +151,29 @@ func (w EgWaiter) Wait() error {
 
 // SafeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
 // pResult.
-// Before using the result, a caller must wait on the Waiter passed into this function.
+// Before using the result, a caller must wait on the Waiter returned by this function.
 // If f panics, the panic value is converted to an error and set in the result.
 func SafeGoCh[T any](
-	w ChWaiter,
+	ctx context.Context,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
-) {
-	if active := <-w.activeCh; active {
-		defer func() { w.activeCh <- true }() // keep it active
+) SingleWaiter {
+	w := MakeSingleWaiter(ctx)
+	// fmt.Println("%%%% entered SafeGoCh")
+	if active := <-w.P.ActiveGate; active {
+		// fmt.Println("%%%% in active portion of SafeGoCh")
+		defer func() { w.P.ActiveGate <- true }() // keep it active
 		fs := util.SafeFunc1E(f)
 		go func() {
-			defer close(w.errCh)
-			res, err := fs(w.ctx)
+			res, err := fs(w.P.Ctx)
+			// fmt.Println("%%%% res, err :=", res, err)
 			*pResult = ResultWithError[T]{res, err}
+			close(w.ComplCh)
 		}()
+	} else {
+		panic("attemp to add goroutine to inactive waiter")
 	}
+	return w
 }
 
 // SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
@@ -178,13 +185,18 @@ func SafeGoWg[T any](
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
 ) {
-	w.wg.Add(1)
-	fs := util.SafeFunc1E(f)
-	go func() {
-		defer w.wg.Done()
-		res, err := fs(w.ctx)
-		*pResult = ResultWithError[T]{res, err}
-	}()
+	if active := <-w.P.ActiveGate; active {
+		defer func() { w.P.ActiveGate <- true }() // keep it active
+		w.Wg.Add(1)
+		fs := util.SafeFunc1E(f)
+		go func() {
+			defer w.Wg.Done()
+			res, err := fs(w.P.Ctx)
+			*pResult = ResultWithError[T]{res, err}
+		}()
+	} else {
+		panic("attemp to add goroutine to inactive waiter")
+	}
 }
 
 // SafeGoEg launches f as a saparate goroutine and puts its non-error result in the struct
@@ -192,9 +204,9 @@ func SafeGoWg[T any](
 // Before using the result, a caller must wait on the Waiter returned by this function..
 // If f panics, the panic value is converted to an error and set in the result.
 //
-// ctx is the parent context used in the call to errgroup.WithContext.
+// Ctx is the parent context used in the call to errgroup.WithContext.
 //
-// This function creates a child context of ctx (with a cancellation function) that is passed
+// This function creates a child context of Ctx (with a cancellation function) that is passed
 // to f.  The cancellation function is used specifically
 // to signal functions in the error group that one of the functions in the group returned an
 // error.  This is required because the context created by the errgroup.WithContext function
@@ -207,12 +219,17 @@ func SafeGoEg[T any](
 	f func(context.Context) (T, error),
 	pResult *T,
 ) {
-	fs := util.SafeFunc1E(f)
-	w.eg.Go(func() error {
-		res, err := fs(w.ctx)
-		*pResult = res
-		return err
-	})
+	if active := <-w.P.ActiveGate; active {
+		defer func() { w.P.ActiveGate <- true }() // keep it active
+		fs := util.SafeFunc1E(f)
+		w.Eg.Go(func() error {
+			res, err := fs(w.P.Ctx)
+			*pResult = res
+			return err
+		})
+	} else {
+		panic("attemp to add goroutine to inactive waiter")
+	}
 }
 
 /////////////////////
@@ -232,7 +249,7 @@ func RunConcurrentsWg[T any](
 	for index, f := range funcs {
 		SafeGoWg(waiter, f, &results[index])
 	}
-	err := waiter.errWait()
+	err := waiter.Wait()
 	return results, err
 }
 
@@ -250,7 +267,7 @@ func RunConcurrent2Wg[T1, T2 any](
 	waiter := MakeWgWaiter(ctx)
 	SafeGoWg(waiter, f1, &results.X1)
 	SafeGoWg(waiter, f2, &results.X2)
-	err := waiter.errWait()
+	err := waiter.Wait()
 	return results, err
 }
 
@@ -269,7 +286,7 @@ func RunConcurrentsEg[T any](
 	for index, f := range funcs {
 		SafeGoEg(waiter, f, &results[index])
 	}
-	err := waiter.errWait()
+	err := waiter.Wait()
 	return results, err
 }
 
@@ -288,7 +305,7 @@ func RunConcurrent2Eg[T1, T2 any](
 	waiter := MakeEgWaiter(ctx)
 	SafeGoEg(waiter, f1, &res.X1)
 	SafeGoEg(waiter, f2, &res.X2)
-	err := waiter.errWait()
+	err := waiter.Wait()
 	return res, err
 }
 
@@ -301,13 +318,14 @@ type Promise[T any] interface {
 
 type PromiseImpl[T any] struct {
 	ResWE  ResultWithError[T] // can't use embedded struct with go2go
-	Waiter Waiter
+	Waiter SingleWaiter
 }
 
-func (p *PromiseImpl[T]) Await() (T, error) {
-	errW := p.Waiter.Wait()
-	value := p.ResWE.Value
-	err := p.ResWE.Error
+func (P *PromiseImpl[T]) Await() (T, error) {
+	// fmt.Println("%%% about to wait")
+	errW := P.Waiter.Wait()
+	value := P.ResWE.Value
+	err := P.ResWE.Error
 	if errW != nil {
 		err = errW
 	}
@@ -320,9 +338,7 @@ func Async[T any](
 ) Promise[T] {
 	promImpl := PromiseImpl[T]{}
 	pResWE := &promImpl.ResWE
-	waiter := MakeChWaiter(ctx)
-	promImpl.Waiter = waiter
-	SafeGoCh(waiter, f, pResWE)
+	promImpl.Waiter = SafeGoCh(ctx, f, pResWE)
 	return &promImpl
 }
 
