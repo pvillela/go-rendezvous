@@ -8,6 +8,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+/**********************************************************************
+******* FIX DOC COMMENTS
+ */
+
 /////////////////////
 // Unit
 
@@ -24,67 +28,122 @@ type ResultWithError[T any] struct {
 /////////////////////
 // Waiter
 
-// Waiter encapsulates a context.Context and a chan error.  It supports waiting on the
+type Waiter interface {
+	Wait() error
+}
+
+// preWaiter encapsulates a context.Context and a chan error.  It supports waiting on the
 // completion of an asynchronous operation while paying attention to the context's deadline.
 // See its Wait() method.
-type Waiter struct {
-	ctx    context.Context
-	cancel func()
-	ch     chan error
+type preWaiter struct {
+	ctx       context.Context
+	errCh     chan error
+	activeCh  chan bool
+	errWaitCh chan bool
+	err       error
 }
 
 // Wait waits on both the ch error channel field in the receiver and the Done() channel in the
 // ctx context field in the receiver.  If ctx.Done() happens first then this method returns
 // a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in ch.
-func (w Waiter) Wait() error {
-	defer func() {
-		if w.cancel != nil {
-			w.cancel()
+
+// TODO: need to cache result so that multiple calls to preWait all return the same value.
+
+func (w preWaiter) errWait() error {
+	if wait := <-w.errWaitCh; wait {
+		defer close(w.errWaitCh)
+		err := w.err
+		select {
+		case errW := <-w.errCh:
+			err = errW
+		case <-w.ctx.Done():
+			err = w.ctx.Err()
 		}
-	}()
-	select {
-	case err := <-w.ch:
-		return err
-	case <-w.ctx.Done():
-		return w.ctx.Err()
+		w.err = err
+	}
+	return w.err
+}
+
+func (w preWaiter) close() {
+	if active := <-w.activeCh; active {
+		close(w.activeCh)
 	}
 }
 
-func WaiterForCh(ctx context.Context, ch chan error) Waiter {
-	return Waiter{ctx, nil, ch}
+type ChWaiter struct {
+	preWaiter
 }
 
-func WaiterForWg(ctx context.Context, wg *sync.WaitGroup) Waiter {
-	ch := make(chan error)
+func MakeChWaiter(ctx context.Context) ChWaiter {
+	errCh := make(chan error)
+	activeCh := make(chan bool, 1)
+	activeCh <- true
+	errWaitCh := make(chan bool, 1)
+	errWaitCh <- true
+	return ChWaiter{preWaiter{ctx, errCh, activeCh, errWaitCh, nil}}
+}
+
+func (w ChWaiter) Wait() error {
+	defer close(w.errCh)
+	w.close()
+	return w.errWait()
+}
+
+type WgWaiter struct {
+	preWaiter
+	wg *sync.WaitGroup
+}
+
+func MakeWgWaiter(ctx context.Context) WgWaiter {
+	wg := new(sync.WaitGroup)
+	errCh := make(chan error)
+	activeCh := make(chan bool, 1)
+	activeCh <- true
+	errWaitCh := make(chan bool, 1)
+	errWaitCh <- true
+	return WgWaiter{preWaiter{ctx, errCh, activeCh, errWaitCh, nil}, wg}
+}
+
+func (w WgWaiter) Wait() error {
+	defer close(w.errCh)
+	w.close()
 	go func() {
-		defer close(ch)
-		wg.Wait()
+		defer close(w.errCh)
+		w.wg.Wait()
 	}()
-	return Waiter{ctx, nil, ch}
+	return w.errWait()
 }
 
-// WaiterForEg creates a Waiter for use with error groups.
-//
-// parentCtx is the context from which the error group eg originated.
-//
-// cancel is the cancellation function for a child of parentCtx that was created specifically
-// to signal functions in the error group that one of the functions in the group returned an
-// error.  This is required because the context created by the errgroup.WithContext function
-// is not passed to the functions.  The reason for that is that the error group context
-// ignores the parent context's deadline and cancellation.  This way, the functions in the
-// error group will be notified if either the parent context times out or the parent context
-// is cancelled or the error group context is cancelled (due to an error in a peer function).
-func WaiterForEg(parentCtx context.Context, cancel func(), eg *errgroup.Group) Waiter {
-	ch := make(chan error)
+type EgWaiter struct {
+	preWaiter
+	eg     *errgroup.Group
+	cancel func()
+}
+
+// MakeEgWaiter creates an errgroup.Group encapsulated in a Waiter for use with error groups.
+func MakeEgWaiter(ctx context.Context) EgWaiter {
+	eg, _ := errgroup.WithContext(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error)
+	activeCh := make(chan bool, 1)
+	activeCh <- true
+	errWaitCh := make(chan bool, 1)
+	errWaitCh <- true
+	return EgWaiter{preWaiter{ctx, errCh, activeCh, errWaitCh, nil}, eg, cancel}
+}
+
+func (w EgWaiter) Wait() error {
+	defer close(w.errCh)
+	w.close()
 	go func() {
-		defer close(ch)
-		err := eg.Wait()
-		ch <- err
+		defer close(w.errCh)
+		err := w.eg.Wait()
+		w.errCh <- err
 		if err != nil {
-			cancel()
+			w.cancel()
 		}
 	}()
-	return Waiter{parentCtx, cancel, ch}
+	return w.errWait()
 }
 
 /////////////////////
@@ -92,21 +151,22 @@ func WaiterForEg(parentCtx context.Context, cancel func(), eg *errgroup.Group) W
 
 // SafeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
 // pResult.
-// Before using the result, a caller must wait on the Waiter returned by this function.
+// Before using the result, a caller must wait on the Waiter passed into this function.
 // If f panics, the panic value is converted to an error and set in the result.
 func SafeGoCh[T any](
-	ctx context.Context,
+	w ChWaiter,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
-) Waiter {
-	ch := make(chan error)
-	fs := util.SafeFunc1E(f)
-	go func() {
-		defer close(ch)
-		res, err := fs(ctx)
-		*pResult = ResultWithError[T]{res, err}
-	}()
-	return WaiterForCh(ctx, ch)
+) {
+	if active := <-w.activeCh; active {
+		defer func() { w.activeCh <- true }() // keep it active
+		fs := util.SafeFunc1E(f)
+		go func() {
+			defer close(w.errCh)
+			res, err := fs(w.ctx)
+			*pResult = ResultWithError[T]{res, err}
+		}()
+	}
 }
 
 // SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
@@ -114,19 +174,17 @@ func SafeGoCh[T any](
 // Before using the result, a caller must wait on the Waiter returned by this function..
 // If f panics, the panic value is converted to an error and set in the result.
 func SafeGoWg[T any](
-	ctx context.Context,
-	wg *sync.WaitGroup,
+	w WgWaiter,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
-) Waiter {
-	wg.Add(1)
+) {
+	w.wg.Add(1)
 	fs := util.SafeFunc1E(f)
 	go func() {
-		defer wg.Done()
-		res, err := fs(ctx)
+		defer w.wg.Done()
+		res, err := fs(w.ctx)
 		*pResult = ResultWithError[T]{res, err}
 	}()
-	return WaiterForWg(ctx, wg)
 }
 
 // SafeGoEg launches f as a saparate goroutine and puts its non-error result in the struct
@@ -145,19 +203,16 @@ func SafeGoWg[T any](
 // error group will be notified if either the parent context times out or the parent context
 // is cancelled or the error group context is cancelled (due to an error in a peer function).
 func SafeGoEg[T any](
-	ctx context.Context,
-	eg *errgroup.Group,
+	w EgWaiter,
 	f func(context.Context) (T, error),
 	pResult *T,
-) Waiter {
-	ctx, cancel := context.WithCancel(ctx)
+) {
 	fs := util.SafeFunc1E(f)
-	eg.Go(func() error {
-		res, err := fs(ctx)
+	w.eg.Go(func() error {
+		res, err := fs(w.ctx)
 		*pResult = res
 		return err
 	})
-	return WaiterForEg(ctx, cancel, eg)
 }
 
 /////////////////////
@@ -173,12 +228,11 @@ func RunConcurrentsWg[T any](
 	funcs ...func(context.Context) (T, error),
 ) ([]ResultWithError[T], error) {
 	results := make([]ResultWithError[T], len(funcs))
-	wg := new(sync.WaitGroup)
-	waiter := WaiterForWg(ctx, wg)
+	waiter := MakeWgWaiter(ctx)
 	for index, f := range funcs {
-		SafeGoWg(ctx, wg, f, &results[index])
+		SafeGoWg(waiter, f, &results[index])
 	}
-	err := waiter.Wait()
+	err := waiter.errWait()
 	return results, err
 }
 
@@ -193,11 +247,10 @@ func RunConcurrent2Wg[T1, T2 any](
 	f2 func(context.Context) (T2, error),
 ) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
 	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
-	wg := new(sync.WaitGroup)
-	waiter := WaiterForWg(ctx, wg)
-	SafeGoWg(ctx, wg, f1, &results.X1)
-	SafeGoWg(ctx, wg, f2, &results.X2)
-	err := waiter.Wait()
+	waiter := MakeWgWaiter(ctx)
+	SafeGoWg(waiter, f1, &results.X1)
+	SafeGoWg(waiter, f2, &results.X2)
+	err := waiter.errWait()
 	return results, err
 }
 
@@ -212,13 +265,11 @@ func RunConcurrentsEg[T any](
 	funcs ...func(context.Context) (T, error),
 ) ([]T, error) {
 	results := make([]T, len(funcs))
-	ctx, cancel := context.WithCancel(ctx)
-	eg, _ := errgroup.WithContext(ctx)
-	waiter := WaiterForEg(ctx, cancel, eg)
+	waiter := MakeEgWaiter(ctx)
 	for index, f := range funcs {
-		SafeGoEg(ctx, eg, f, &results[index])
+		SafeGoEg(waiter, f, &results[index])
 	}
-	err := waiter.Wait()
+	err := waiter.errWait()
 	return results, err
 }
 
@@ -234,12 +285,10 @@ func RunConcurrent2Eg[T1, T2 any](
 	f2 func(context.Context) (T2, error),
 ) (util.Tuple2[T1, T2], error) {
 	res := util.Tuple2[T1, T2]{}
-	ctx, cancel := context.WithCancel(ctx)
-	eg, _ := errgroup.WithContext(ctx)
-	waiter := WaiterForEg(ctx, cancel, eg)
-	SafeGoEg(ctx, eg, f1, &res.X1)
-	SafeGoEg(ctx, eg, f2, &res.X2)
-	err := waiter.Wait()
+	waiter := MakeEgWaiter(ctx)
+	SafeGoEg(waiter, f1, &res.X1)
+	SafeGoEg(waiter, f2, &res.X2)
+	err := waiter.errWait()
 	return res, err
 }
 
@@ -271,7 +320,9 @@ func Async[T any](
 ) Promise[T] {
 	promImpl := PromiseImpl[T]{}
 	pResWE := &promImpl.ResWE
-	promImpl.Waiter = SafeGoCh(ctx, f, pResWE)
+	waiter := MakeChWaiter(ctx)
+	promImpl.Waiter = waiter
+	SafeGoCh(waiter, f, pResWE)
 	return &promImpl
 }
 
