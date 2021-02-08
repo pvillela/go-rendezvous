@@ -56,7 +56,7 @@ func f5(ctx context.Context) (int, error) {
 	return 5, nil
 }
 
-func f6(ctx context.Context) (int, error) {
+func f6(_ context.Context) (int, error) {
 	fmt.Println(">>> f6 starting")
 	time.Sleep(60 * time.Millisecond)
 	fmt.Println("<<< f6 finishing")
