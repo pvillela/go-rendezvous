@@ -25,7 +25,8 @@ type Rdv[T any] struct {
 
 // Receive waits on the receiver and returns the results of the asynchronous computation for
 // which the receiver was created (see Go and GoEg).
-// This function may only be called once.
+// For this method and ReceiveCtx, altogether at most one invocation is allowed for a given
+// receiver.
 func (rv Rdv[T]) Receive() (T, error) {
 	data := <-rv.Ch
 	if !data.ChanOpen {
@@ -38,7 +39,8 @@ func (rv Rdv[T]) Receive() (T, error) {
 // If ctx is not cancelled or times-out, this function returns the results of the asynchronous
 // computation for which the receiver was created (see Go and GoEg).
 // Otherwise, this function returns early with a TimeoutError or CancellationError.
-// This function may only be called once.
+// For this method and Receive, altogether at most one invocation is allowed for a given
+// receiver.
 func (rv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
 	data := RdvData[T]{}
 	select {
