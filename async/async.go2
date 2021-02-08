@@ -115,20 +115,18 @@ func (w WgWaiter) Wait() error {
 }
 
 type EgWaiter struct {
-	P      preWaiter // embedded structs not supported by go2go
-	Eg     *errgroup.Group
-	Cancel func()
+	P  preWaiter // embedded structs not supported by go2go
+	Eg *errgroup.Group
 }
 
 // MakeEgWaiter creates an errgroup.Group encapsulated in a Waiter for use with error groups.
 func MakeEgWaiter(ctx context.Context) EgWaiter {
-	eg, _ := errgroup.WithContext(ctx)
-	ctx, cancel := context.WithCancel(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
 	waitCh := make(chan error)
 	activeGate := make(chan bool, 1)
 	activeGate <- true
 	waitChGate := new(sync.Once)
-	return EgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, eg, cancel}
+	return EgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, eg}
 }
 
 func (w EgWaiter) Wait() error {
@@ -137,9 +135,6 @@ func (w EgWaiter) Wait() error {
 		go func() {
 			err := w.Eg.Wait()
 			w.P.WaitCh <- err
-			if err != nil {
-				w.Cancel()
-			}
 			close(w.P.WaitCh)
 		}()
 	}
@@ -203,17 +198,6 @@ func SafeGoWg[T any](
 // pointed to by pResult.
 // Before using the result, a caller must wait on the Waiter returned by this function..
 // If f panics, the panic value is converted to an error and set in the result.
-//
-// Ctx is the parent context used in the call to errgroup.WithContext.
-//
-// This function creates a child context of Ctx (with a cancellation function) that is passed
-// to f.  The cancellation function is used specifically
-// to signal functions in the error group that one of the functions in the group returned an
-// error.  This is required because the context created by the errgroup.WithContext function
-// is not passed to the functions.  The reason for that is that the error group context
-// ignores the parent context's deadline and cancellation.  This way, the functions in the
-// error group will be notified if either the parent context times out or the parent context
-// is cancelled or the error group context is cancelled (due to an error in a peer function).
 func SafeGoEg[T any](
 	w EgWaiter,
 	f func(context.Context) (T, error),
