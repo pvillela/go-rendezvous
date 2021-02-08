@@ -13,28 +13,28 @@ import (
 
 func f1(_ context.Context) (int, error) {
 	fmt.Println(">>> f1 starting")
-	time.Sleep(10 * 5 * time.Millisecond)
+	time.Sleep(10 * 1 * time.Millisecond)
 	fmt.Println("<<< f1 finishing")
 	return 1, nil
 }
 
 func f2(_ context.Context) (int, error) {
 	fmt.Println(">>> f2 starting")
-	time.Sleep(20 * 5 * time.Millisecond)
+	time.Sleep(20 * 1 * time.Millisecond)
 	fmt.Println("<<< f2 finishing")
 	panic("f2 panicked")
 }
 
 func f3(_ context.Context) (int, error) {
 	fmt.Println(">>> f3 starting")
-	time.Sleep(30 * 5 * time.Millisecond)
+	time.Sleep(30 * 1 * time.Millisecond)
 	fmt.Println("<<< f3 finishing")
 	return 0, errors.New("f3 errored-out")
 }
 
 func f4(ctx context.Context) (int, error) {
 	fmt.Println(">>> f4 starting")
-	time.Sleep(40 * 5 * time.Millisecond)
+	time.Sleep(40 * 1 * time.Millisecond)
 	fmt.Println("<<< f4 finishing")
 	if ctx.Err() != nil {
 		return 444, errors.New("f4 aborted")
@@ -44,7 +44,7 @@ func f4(ctx context.Context) (int, error) {
 
 func f5(ctx context.Context) (int, error) {
 	fmt.Println(">>> f5 starting")
-	valDur := int64(50 * 5 * time.Millisecond)
+	valDur := int64(50 * 1 * time.Millisecond)
 	shorDur := time.Duration(valDur / 10)
 	for i := 0; i < 10; i++ {
 		if ctx.Err() != nil {
@@ -59,7 +59,7 @@ func f5(ctx context.Context) (int, error) {
 
 func f6(_ context.Context) (int, error) {
 	fmt.Println(">>> f6 starting")
-	time.Sleep(60 * 5 * time.Millisecond)
+	time.Sleep(60 * 1 * time.Millisecond)
 	fmt.Println("<<< f6 finishing")
 	return 6, nil
 }
@@ -87,13 +87,13 @@ func (ctx Ctx) inj(f func(context.Context) (int, error)) func() (int, error) {
 // This function is copied from rdv package because go2go gives bogus type checking error for
 // eg argument
 func RdvGoEg[T any](eg *errgroup.Group, f func() (T, error)) rdv.Rdv[T] {
-	rv := make(rdv.Rdv[T], 1)
+	rv := rdv.Rdv[T]{make(chan rdv.RdvData[T], 1)}
 	eg.Go(func() error {
-		defer close(rv)
+		defer close(rv.Ch)
 		fs := util.SafeFunc0E(f)
 		res, err := fs()
 		data := rdv.RdvData[T]{res, err, true}
-		rv <- data
+		rv.Ch <- data
 		return err
 	})
 	return rv
@@ -103,85 +103,85 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvGo 1")
-		rv := rdv.Go(ctxTO(240).inj(f1))
+		rv := rdv.Go(ctxTO(48 * 1).inj(f1))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 2")
-		rv := rdv.Go(ctxTO(240).inj(f2))
+		rv := rdv.Go(ctxTO(48 * 1).inj(f2))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 3")
-		rv := rdv.Go(ctxTO(240).inj(f3))
+		rv := rdv.Go(ctxTO(48 * 1).inj(f3))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 4")
-		rv := rdv.Go(ctxTO(240).inj(f4))
+		rv := rdv.Go(ctxTO(48 * 1).inj(f4))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 5")
-		rv := rdv.Go(ctxTO(240).inj(f5))
+		rv := rdv.Go(ctxTO(48 * 1).inj(f5))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 6")
-		rv := rdv.Go(ctxTO(240).inj(f6))
+		rv := rdv.Go(ctxTO(48 * 1).inj(f6))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 1 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		rv := rdv.Go(C.inj(f1))
 		fmt.Println(rv.ReceiveCtx(C.c))
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 2 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		rv := rdv.Go(C.inj(f2))
 		fmt.Println(rv.ReceiveCtx(C.c))
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 3 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		rv := rdv.Go(C.inj(f3))
 		fmt.Println(rv.ReceiveCtx(C.c))
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 4 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		rv := rdv.Go(C.inj(f4))
 		fmt.Println(rv.ReceiveCtx(C.c))
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 5 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		rv := rdv.Go(C.inj(f5))
 		fmt.Println(rv.ReceiveCtx(C.c))
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvGo 6 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		rv := rdv.Go(C.inj(f6))
 		fmt.Println(rv.ReceiveCtx(C.c))
 	}()
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 12")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f1))
@@ -192,7 +192,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 12 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f1))
@@ -203,7 +203,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 24")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f2))
@@ -214,7 +214,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 24 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f2))
@@ -225,7 +225,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 42")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f4))
@@ -236,7 +236,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 42 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f4))
@@ -247,7 +247,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 25")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f2))
@@ -258,7 +258,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 25 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f2))
@@ -269,7 +269,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 52")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f5))
@@ -280,7 +280,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 52 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f5))
@@ -291,7 +291,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 45")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f4))
@@ -302,7 +302,7 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** RdvEgGo 45 ReceiveCtx")
-		C := ctxTO(240)
+		C := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(C.c)
 		Ceg := Ctx{egCtx}
 		rvA := RdvGoEg(eg, Ceg.inj(f4))

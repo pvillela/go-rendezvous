@@ -32,15 +32,17 @@ type RdvData[T any] struct {
 	ChanOpen bool
 }
 
-// Rdv is a channel used for a function launched as a goroutine to rendezvous with the user of
-// the function's results.
-type Rdv[T any] chan RdvData[T]
+// Rdv encapsulates a channel used for a function launched as a goroutine to rendezvous
+// with the user of the function's results.
+type Rdv[T any] struct {
+	Ch chan RdvData[T]
+}
 
 // Receive waits on the receiver and returns the results of the asynchronous computation for
 // which the receiver was created (see Go and GoEg).
 // This function may only be called once.
-func (rdv Rdv[T]) Receive() (T, error) {
-	data := <-rdv
+func (rv Rdv[T]) Receive() (T, error) {
+	data := <-rv.Ch
 	if !data.ChanOpen {
 		panic("attempt to get data from closed rendezvous channel")
 	}
@@ -52,10 +54,10 @@ func (rdv Rdv[T]) Receive() (T, error) {
 // computation for which the receiver was created (see Go and GoEg).
 // Otherwise, this function returns early with a TimeoutError or CancellationError.
 // This function may only be called once.
-func (rdv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
+func (rv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
 	data := RdvData[T]{}
 	select {
-	case data = <-rdv:
+	case data = <-rv.Ch:
 		if !data.ChanOpen {
 			panic("attempt to get data from closed rendezvous channel")
 		}
@@ -68,29 +70,29 @@ func (rdv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
 // Go launches f as an asynchronous computation in a goroutine and returns an Rdv instance
 // to be used to retrieve the results of the computation.
 func Go[T any](f func() (T, error)) Rdv[T] {
-	rdv := make(Rdv[T], 1)
+	rv := Rdv[T]{make(chan RdvData[T], 1)}
 	go func() {
-		defer close(rdv)
+		defer close(rv.Ch)
 		fs := util.SafeFunc0E(f)
 		res, err := fs()
 		data := RdvData[T]{res, err, true}
-		rdv <- data
+		rv.Ch <- data
 	}()
-	return rdv
+	return rv
 }
 
 // GoEg launches f as an asynchronous computation in a goroutine associated with the
 // errgroup.Group eg and returns an Rdv instance to be used to retrieve the results of
 // the computation.
 func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
-	rdv := make(Rdv[T], 1)
+	rv := Rdv[T]{make(chan RdvData[T], 1)}
 	eg.Go(func() error {
-		defer close(rdv)
+		defer close(rv.Ch)
 		fs := util.SafeFunc0E(f)
 		res, err := fs()
 		data := RdvData[T]{res, err, true}
-		rdv <- data
+		rv.Ch <- data
 		return err
 	})
-	return rdv
+	return rv
 }
