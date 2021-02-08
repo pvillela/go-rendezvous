@@ -2,6 +2,7 @@ package async
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/pvillela/go-trygo2/util"
@@ -115,18 +116,19 @@ func (w WgWaiter) Wait() error {
 }
 
 type EgWaiter struct {
-	P  preWaiter // embedded structs not supported by go2go
-	Eg *errgroup.Group
+	P     preWaiter // embedded structs not supported by go2go
+	Eg    *errgroup.Group
+	EgCtx context.Context
 }
 
 // MakeEgWaiter creates an errgroup.Group encapsulated in a Waiter for use with error groups.
-func MakeEgWaiter(ctx context.Context) EgWaiter {
-	eg, ctx := errgroup.WithContext(ctx)
+func MakeEgWaiter(parentCtx context.Context) EgWaiter {
+	eg, egCtx := errgroup.WithContext(parentCtx)
 	waitCh := make(chan error)
 	activeGate := make(chan bool, 1)
 	activeGate <- true
 	waitChGate := new(sync.Once)
-	return EgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, eg}
+	return EgWaiter{preWaiter{parentCtx, waitCh, activeGate, waitChGate, nil}, eg, egCtx}
 }
 
 func (w EgWaiter) Wait() error {
@@ -163,6 +165,7 @@ func SafeGoCh[T any](
 			res, err := fs(w.P.Ctx)
 			// fmt.Println("%%%% res, err :=", res, err)
 			*pResult = ResultWithError[T]{res, err}
+			fmt.Println("%%%% *pResult", *pResult)
 			close(w.ComplCh)
 		}()
 	} else {
@@ -207,7 +210,7 @@ func SafeGoEg[T any](
 		defer func() { w.P.ActiveGate <- true }() // keep it active
 		fs := util.SafeFunc1E(f)
 		w.Eg.Go(func() error {
-			res, err := fs(w.P.Ctx)
+			res, err := fs(w.EgCtx)
 			*pResult = res
 			return err
 		})
@@ -234,6 +237,7 @@ func RunConcurrentsWg[T any](
 		SafeGoWg(waiter, f, &results[index])
 	}
 	err := waiter.Wait()
+	fmt.Println("%%% results =", results, "err = ", err)
 	return results, err
 }
 
