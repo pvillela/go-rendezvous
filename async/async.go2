@@ -9,33 +9,27 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-/**********************************************************************
-******* FIX DOC COMMENTS
- */
-
 /////////////////////
 // Unit
 
+// Unit is a type alias
 type Unit = struct{}
 
 /////////////////////
 // ResultWithError
 
+// ResultWithError encapsulates a normal result value and an error.
 type ResultWithError[T any] struct {
 	Value T
 	Error error
 }
 
 /////////////////////
-// Waiter
-
-// type Waiter interface {
-// 	Wait() error
-// }
+// Waiters
 
 // preWaiter encapsulates a context.Context and a chan error.  It supports waiting on the
 // completion of an asynchronous operation while paying attention to the context's deadline.
-// See its Wait() method.
+// See its ErrWait() method.
 type preWaiter struct {
 	Ctx        context.Context
 	WaitCh     chan error
@@ -44,9 +38,10 @@ type preWaiter struct {
 	Err        error
 }
 
-// ErrWait waits on both the WaitCh channel field in the receiver and the Done() channel in the
+// ErrWait waits on both the WaitCh channel field in the receiver and the Done() channel for the
 // Ctx context field in the receiver.  If Ctx.Done() happens first then this method returns
 // a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in WaitCh.
+// This function may be called multiple times and always returns the same results.
 func (w preWaiter) ErrWait() error {
 	// fmt.Println("%%% entered ErrWait")
 	w.WaitChGate.Do(func() {
@@ -63,11 +58,13 @@ func (w preWaiter) ErrWait() error {
 	return w.Err
 }
 
+// SingleWaiter supports waiting on the completion of a single goroutine.
 type SingleWaiter struct {
 	P       preWaiter // embedded structs not supported by go2go
 	ComplCh chan Unit
 }
 
+// MakeSingleWaiter constructs a SingleWaiter.
 func MakeSingleWaiter(ctx context.Context) SingleWaiter {
 	complCh := make(chan Unit)
 	waitCh := make(chan error)
@@ -77,6 +74,10 @@ func MakeSingleWaiter(ctx context.Context) SingleWaiter {
 	return SingleWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, complCh}
 }
 
+// Wait waits on both the WaitCh channel field in the receiver and the Done() channel for the
+// Ctx context field in the receiver.  If Ctx.Done() happens first then this method returns
+// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in WaitCh.
+// This function may be called multiple times and always returns the same results.
 func (w SingleWaiter) Wait() error {
 	// fmt.Println("%%% entered Wait")
 	if active := <-w.P.ActiveGate; active {
@@ -90,11 +91,14 @@ func (w SingleWaiter) Wait() error {
 	return w.P.ErrWait()
 }
 
+// WgWaiter supports waiting on the completion of a group of goroutines associated with a
+// sync.WaitGroup.
 type WgWaiter struct {
 	P  preWaiter // embedded structs not supported by go2go
 	Wg *sync.WaitGroup
 }
 
+// MakeWgWaiter constructs a WgWaiter.
 func MakeWgWaiter(ctx context.Context) WgWaiter {
 	wg := new(sync.WaitGroup)
 	waitCh := make(chan error)
@@ -104,6 +108,10 @@ func MakeWgWaiter(ctx context.Context) WgWaiter {
 	return WgWaiter{preWaiter{ctx, waitCh, activeGate, waitChGate, nil}, wg}
 }
 
+// Wait waits on both the WaitCh channel field in the receiver and the Done() channel for the
+// Ctx context field in the receiver.  If Ctx.Done() happens first then this method returns
+// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in WaitCh.
+// This function may be called multiple times and always returns the same results.
 func (w WgWaiter) Wait() error {
 	if active := <-w.P.ActiveGate; active {
 		close(w.P.ActiveGate)
@@ -115,13 +123,15 @@ func (w WgWaiter) Wait() error {
 	return w.P.ErrWait()
 }
 
+// EgWaiter supports waiting on the completion of a group of goroutines associated with an
+// errgroup.Group.
 type EgWaiter struct {
 	P     preWaiter // embedded structs not supported by go2go
 	Eg    *errgroup.Group
 	EgCtx context.Context
 }
 
-// MakeEgWaiter creates an errgroup.Group encapsulated in a Waiter for use with error groups.
+// MakeEgWaiter constructs an EgWaiter.
 func MakeEgWaiter(parentCtx context.Context) EgWaiter {
 	eg, egCtx := errgroup.WithContext(parentCtx)
 	waitCh := make(chan error)
@@ -131,6 +141,10 @@ func MakeEgWaiter(parentCtx context.Context) EgWaiter {
 	return EgWaiter{preWaiter{parentCtx, waitCh, activeGate, waitChGate, nil}, eg, egCtx}
 }
 
+// Wait waits on both the WaitCh channel field in the receiver and the Done() channel for the
+// Ctx context field in the receiver.  If Ctx.Done() happens first then this method returns
+// a DeadlineExceeded or a Canceled error.  Otherwise, it returns the error received in WaitCh.
+// This function may be called multiple times and always returns the same results.
 func (w EgWaiter) Wait() error {
 	if active := <-w.P.ActiveGate; active {
 		close(w.P.ActiveGate)
@@ -146,11 +160,11 @@ func (w EgWaiter) Wait() error {
 /////////////////////
 // SafeGo
 
-// SafeGoCh launches f as a saparate goroutine and puts its result in the struct pointed to by
+// Go launches f as a saparate goroutine and puts its result in the struct pointed to by
 // pResult.
 // Before using the result, a caller must wait on the Waiter returned by this function.
 // If f panics, the panic value is converted to an error and set in the result.
-func SafeGoCh[T any](
+func Go[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
@@ -174,11 +188,11 @@ func SafeGoCh[T any](
 	return w
 }
 
-// SafeGoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
+// GoWg launches f as a saparate goroutine and puts its result in the struct pointed to by
 // pResult.
-// Before using the result, a caller must wait on the Waiter returned by this function..
+// Before using the result, a caller must wait on the Waiter passed into this function.
 // If f panics, the panic value is converted to an error and set in the result.
-func SafeGoWg[T any](
+func GoWg[T any](
 	w WgWaiter,
 	f func(context.Context) (T, error),
 	pResult *ResultWithError[T],
@@ -197,11 +211,11 @@ func SafeGoWg[T any](
 	}
 }
 
-// SafeGoEg launches f as a saparate goroutine and puts its non-error result in the struct
+// GoEg launches f as a saparate goroutine and puts its non-error result in the struct
 // pointed to by pResult.
-// Before using the result, a caller must wait on the Waiter returned by this function..
+// Before using the result, a caller must wait on the Waiter passed into this function.
 // If f panics, the panic value is converted to an error and set in the result.
-func SafeGoEg[T any](
+func GoEg[T any](
 	w EgWaiter,
 	f func(context.Context) (T, error),
 	pResult *T,
@@ -234,7 +248,7 @@ func RunConcurrentsWg[T any](
 	results := make([]ResultWithError[T], len(funcs))
 	waiter := MakeWgWaiter(ctx)
 	for index, f := range funcs {
-		SafeGoWg(waiter, f, &results[index])
+		GoWg(waiter, f, &results[index])
 	}
 	err := waiter.Wait()
 	fmt.Println("%%% results =", results, "err = ", err)
@@ -253,8 +267,8 @@ func RunConcurrent2Wg[T1, T2 any](
 ) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
 	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
 	waiter := MakeWgWaiter(ctx)
-	SafeGoWg(waiter, f1, &results.X1)
-	SafeGoWg(waiter, f2, &results.X2)
+	GoWg(waiter, f1, &results.X1)
+	GoWg(waiter, f2, &results.X2)
 	err := waiter.Wait()
 	return results, err
 }
@@ -272,7 +286,7 @@ func RunConcurrentsEg[T any](
 	results := make([]T, len(funcs))
 	waiter := MakeEgWaiter(ctx)
 	for index, f := range funcs {
-		SafeGoEg(waiter, f, &results[index])
+		GoEg(waiter, f, &results[index])
 	}
 	err := waiter.Wait()
 	return results, err
@@ -291,8 +305,8 @@ func RunConcurrent2Eg[T1, T2 any](
 ) (util.Tuple2[T1, T2], error) {
 	res := util.Tuple2[T1, T2]{}
 	waiter := MakeEgWaiter(ctx)
-	SafeGoEg(waiter, f1, &res.X1)
-	SafeGoEg(waiter, f2, &res.X2)
+	GoEg(waiter, f1, &res.X1)
+	GoEg(waiter, f2, &res.X2)
 	err := waiter.Wait()
 	return res, err
 }
@@ -300,16 +314,21 @@ func RunConcurrent2Eg[T1, T2 any](
 /////////////////////
 // Promise
 
+// Promise supports awaiting on and receiving the result of an asynchronous computation.
 type Promise[T any] interface {
 	Await() (T, error)
 }
 
-type PromiseImpl[T any] struct {
+// promisImpl is the concrete implementation of Promise.
+type promiseImpl[T any] struct {
 	ResWE  ResultWithError[T] // can't use embedded struct with go2go
 	Waiter SingleWaiter
 }
 
-func (P *PromiseImpl[T]) Await() (T, error) {
+// Await waits on the asychronous computation associated with the receiver and returns the
+// result of the computation.
+// This function may be called multiple times and always returns the same results.
+func (P *promiseImpl[T]) Await() (T, error) {
 	// fmt.Println("%%% about to wait")
 	errW := P.Waiter.Wait()
 	value := P.ResWE.Value
@@ -320,16 +339,20 @@ func (P *PromiseImpl[T]) Await() (T, error) {
 	return value, err
 }
 
+// Async constructs a Promise for the asynchronous execution of f.
 func Async[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
 ) Promise[T] {
-	promImpl := PromiseImpl[T]{}
+	promImpl := promiseImpl[T]{}
 	pResWE := &promImpl.ResWE
-	promImpl.Waiter = SafeGoCh(ctx, f, pResWE)
+	promImpl.Waiter = Go(ctx, f, pResWE)
 	return &promImpl
 }
 
+// Async2Eg returns a Promise for the concurrent execution of the functions f1 and f2
+// in an errgroup.Group.
+// The Promise completes when the error group Wait method returns.
 func Async2Eg[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
@@ -341,6 +364,9 @@ func Async2Eg[T1 any, T2 any](
 	return Async(ctx, f)
 }
 
+// AsyncsEg returns a Promise for the concurrent execution of the functions funcs
+// in an errgroup.Group.
+// The Promise completes when the error group Wait method returns.
 func AsyncsEg[T any](
 	ctx context.Context,
 	funcs ...func(ctx context.Context) (T, error),
@@ -351,6 +377,9 @@ func AsyncsEg[T any](
 	return Async(ctx, f)
 }
 
+// Async2Wg returns a Promise for the concurrent execution of the functions f1 and f2
+// in a sync.WaitGroup.
+// The Promise completes when the wait group Wait method returns.
 func Async2Wg[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
@@ -362,6 +391,9 @@ func Async2Wg[T1 any, T2 any](
 	return Async(ctx, f)
 }
 
+// AsyncsWg returns a Promise for the concurrent execution of the functions funcs
+// in a sync.WaitGroup.
+// The Promise completes when the wait group Wait method returns.
 func AsyncsWg[T any](
 	ctx context.Context,
 	funcs ...func(ctx context.Context) (T, error),
@@ -372,6 +404,12 @@ func AsyncsWg[T any](
 	return Async(ctx, f)
 }
 
+/////////////////////
+// RunInBackground
+
+// RunInBackground runs a function in the background as a goroutine.  This function returns
+// early if the context ctx is cancelled or times-out.  In all cases, errorHandler is executed
+// if f returns an error, even if f completes after the context ctx is cancelled.
 func RunInBackground[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
@@ -379,7 +417,10 @@ func RunInBackground[T any](
 ) (T, error) {
 	f1 := func(ctx context.Context) (T, error) {
 		res, err := f(ctx)
-		errorHandler(err)
+		// is cancelled or times-out and f continues executing thene
+		if err != nil {
+			errorHandler(err)
+		}
 		return res, err
 	}
 	promise := Async(ctx, f1)
