@@ -96,3 +96,13 @@ func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
 	})
 	return rv
 }
+
+// CtxApply partially applies the ctx argument to return a nulladic function.
+func CtxApply[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+) func() (T, error) {
+	return func() (T, error) {
+		return f(ctx)
+	}
+}
