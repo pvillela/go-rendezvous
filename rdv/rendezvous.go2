@@ -8,21 +8,6 @@ import (
 )
 
 /////////////////////
-// Unit
-
-// Unit is a type alias
-type Unit = struct{}
-
-/////////////////////
-// ResultWithError
-
-// ResultWithError encapsulates a normal result value and an error.
-type ResultWithError[T any] struct {
-	Value T
-	Error error
-}
-
-/////////////////////
 // Rdv
 
 // RdvData is the data structure used by Rdv channels.
