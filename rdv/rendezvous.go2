@@ -1,5 +1,5 @@
 // Package rdv supports the safe and convenient execution of asynchronous computations with
-// goroutines and facilites for the safe retrieval of the computation results.
+// goroutines and provides facilites for the safe retrieval of the computation results.
 // It provides safety in the sense that panics in asynchronous computations are transformed
 // into error results and methods and functions prevent resource leaks.
 package rdv
