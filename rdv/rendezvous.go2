@@ -1,3 +1,7 @@
+// Package rdv supports the safe and convenient execution of asynchronous computations with
+// goroutines and facilites for the safe retrieval of the computation results.
+// It provides safety in the sense that panics in asynchronous computations are transformed
+// into error results and methods and functions prevent resource leaks.
 package rdv
 
 import (
@@ -10,17 +14,17 @@ import (
 /////////////////////
 // Rdv
 
-// RdvData is the data structure used by Rdv channels.
-type RdvData[T any] struct {
-	Value    T
-	Error    error
-	ChanOpen bool
+// rdvData is the data structure used by Rdv channels.
+type rdvData[T any] struct {
+	value    T
+	err      error
+	chanOpen bool
 }
 
 // Rdv encapsulates a channel used for a function launched as a goroutine to rendezvous
 // with the user of the function's results.
 type Rdv[T any] struct {
-	Ch chan RdvData[T]
+	ch chan rdvData[T]
 }
 
 // Receive waits on the receiver and returns the results of the asynchronous computation for
@@ -28,11 +32,11 @@ type Rdv[T any] struct {
 // For this method and ReceiveCtx, altogether at most one invocation is allowed for a given
 // receiver.
 func (rv Rdv[T]) Receive() (T, error) {
-	data := <-rv.Ch
-	if !data.ChanOpen {
+	data := <-rv.ch
+	if !data.chanOpen {
 		panic("attempt to get data from closed rendezvous channel")
 	}
-	return data.Value, data.Error
+	return data.value, data.err
 }
 
 // ReceiveCtx waits on the receiver and watches the context ctx for cancellation or timeout.
@@ -42,28 +46,28 @@ func (rv Rdv[T]) Receive() (T, error) {
 // For this method and Receive, altogether at most one invocation is allowed for a given
 // receiver.
 func (rv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
-	data := RdvData[T]{}
+	data := rdvData[T]{}
 	select {
-	case data = <-rv.Ch:
-		if !data.ChanOpen {
+	case data = <-rv.ch:
+		if !data.chanOpen {
 			panic("attempt to get data from closed rendezvous channel")
 		}
 	case <-ctx.Done():
-		data.Error = ctx.Err()
+		data.err = ctx.Err()
 	}
-	return data.Value, data.Error
+	return data.value, data.err
 }
 
 // Go launches f as an asynchronous computation in a goroutine and returns an Rdv instance
 // to be used to retrieve the results of the computation.
 func Go[T any](f func() (T, error)) Rdv[T] {
-	rv := Rdv[T]{make(chan RdvData[T], 1)}
+	rv := Rdv[T]{make(chan rdvData[T], 1)}
 	go func() {
-		defer close(rv.Ch)
+		defer close(rv.ch)
 		fs := util.SafeFunc0E(f)
 		res, err := fs()
-		data := RdvData[T]{res, err, true}
-		rv.Ch <- data
+		data := rdvData[T]{res, err, true}
+		rv.ch <- data
 	}()
 	return rv
 }
@@ -72,16 +76,23 @@ func Go[T any](f func() (T, error)) Rdv[T] {
 // errgroup.Group eg and returns an Rdv instance to be used to retrieve the results of
 // the computation.
 func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
-	rv := Rdv[T]{make(chan RdvData[T], 1)}
+	rv := Rdv[T]{make(chan rdvData[T], 1)}
 	eg.Go(func() error {
-		defer close(rv.Ch)
+		defer close(rv.ch)
 		fs := util.SafeFunc0E(f)
 		res, err := fs()
-		data := RdvData[T]{res, err, true}
-		rv.Ch <- data
+		data := rdvData[T]{res, err, true}
+		rv.ch <- data
 		return err
 	})
 	return rv
+}
+
+// !!!!!!
+// Hack to work around go2go bug that prevents pointer argument to be passed across file
+// boundaries.
+func XGoEg[T any](egF func() interface{}, f func() (T, error)) Rdv[T] {
+	return GoEg(egF().(*errgroup.Group), f)
 }
 
 // CtxApply partially applies the ctx argument to return a nulladic function.
