@@ -117,45 +117,45 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvGo 1 ReceiveCtx")
+		fmt.Println("\n*** RdvGo 1 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		rv := rdv.Go(rdv.CtxApply(ctx, f1))
-		fmt.Println(rv.ReceiveCtx(ctx))
+		fmt.Println(rv.ReceiveWatch(ctx))
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvGo 2 ReceiveCtx")
+		fmt.Println("\n*** RdvGo 2 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		rv := rdv.Go(rdv.CtxApply(ctx, f2))
-		fmt.Println(rv.ReceiveCtx(ctx))
+		fmt.Println(rv.ReceiveWatch(ctx))
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvGo 3 ReceiveCtx")
+		fmt.Println("\n*** RdvGo 3 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		rv := rdv.Go(rdv.CtxApply(ctx, f3))
-		fmt.Println(rv.ReceiveCtx(ctx))
+		fmt.Println(rv.ReceiveWatch(ctx))
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvGo 4 ReceiveCtx")
+		fmt.Println("\n*** RdvGo 4 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		rv := rdv.Go(rdv.CtxApply(ctx, f3))
-		fmt.Println(rv.ReceiveCtx(ctx))
+		fmt.Println(rv.ReceiveWatch(ctx))
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvGo 5 ReceiveCtx")
+		fmt.Println("\n*** RdvGo 5 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		rv := rdv.Go(rdv.CtxApply(ctx, f5))
-		fmt.Println(rv.ReceiveCtx(ctx))
+		fmt.Println(rv.ReceiveWatch(ctx))
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvGo 6 ReceiveCtx")
+		fmt.Println("\n*** RdvGo 6 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		rv := rdv.Go(rdv.CtxApply(ctx, f6))
-		fmt.Println(rv.ReceiveCtx(ctx))
+		fmt.Println(rv.ReceiveWatch(ctx))
 	}()
 
 	func() {
@@ -170,14 +170,14 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvEgGo 12 ReceiveCtx")
+		fmt.Println("\n*** RdvEgGo 12 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(ctx)
 		egF := func() interface{} { return eg } // hack to work around go2go bug
 		rvA := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f1))
 		rvB := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f2))
-		fmt.Println(rvA.ReceiveCtx(ctx))
-		fmt.Println(rvB.ReceiveCtx(ctx))
+		fmt.Println(rvA.ReceiveWatch(ctx))
+		fmt.Println(rvB.ReceiveWatch(ctx))
 	}()
 
 	func() {
@@ -192,14 +192,14 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvEgGo 24 ReceiveCtx")
+		fmt.Println("\n*** RdvEgGo 24 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(ctx)
 		egF := func() interface{} { return eg } // hack to work around go2go bug
 		rvA := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f2))
 		rvB := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f4))
-		fmt.Println(rvA.ReceiveCtx(ctx))
-		fmt.Println(rvB.ReceiveCtx(ctx))
+		fmt.Println(rvA.ReceiveWatch(ctx))
+		fmt.Println(rvB.ReceiveWatch(ctx))
 	}()
 
 	func() {
@@ -214,14 +214,14 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvEgGo 42 ReceiveCtx")
+		fmt.Println("\n*** RdvEgGo 42 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(ctx)
 		egF := func() interface{} { return eg } // hack to work around go2go bug
 		rvA := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f4))
 		rvB := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f2))
-		fmt.Println(rvA.ReceiveCtx(ctx))
-		fmt.Println(rvB.ReceiveCtx(ctx))
+		fmt.Println(rvA.ReceiveWatch(ctx))
+		fmt.Println(rvB.ReceiveWatch(ctx))
 	}()
 
 	func() {
@@ -236,14 +236,14 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvEgGo 25 ReceiveCtx")
+		fmt.Println("\n*** RdvEgGo 25 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(ctx)
 		egF := func() interface{} { return eg } // hack to work around go2go bug
 		rvA := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f2))
 		rvB := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f5))
-		fmt.Println(rvA.ReceiveCtx(ctx))
-		fmt.Println(rvB.ReceiveCtx(ctx))
+		fmt.Println(rvA.ReceiveWatch(ctx))
+		fmt.Println(rvB.ReceiveWatch(ctx))
 	}()
 
 	func() {
@@ -258,14 +258,14 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvEgGo 52 ReceiveCtx")
+		fmt.Println("\n*** RdvEgGo 52 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(ctx)
 		egF := func() interface{} { return eg } // hack to work around go2go bug
 		rvA := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f5))
 		rvB := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f2))
-		fmt.Println(rvA.ReceiveCtx(ctx))
-		fmt.Println(rvB.ReceiveCtx(ctx))
+		fmt.Println(rvA.ReceiveWatch(ctx))
+		fmt.Println(rvB.ReceiveWatch(ctx))
 	}()
 
 	func() {
@@ -280,13 +280,13 @@ func main() {
 	}()
 
 	func() {
-		fmt.Println("\n*** RdvEgGo 45 ReceiveCtx")
+		fmt.Println("\n*** RdvEgGo 45 ReceiveWatch")
 		ctx := ctxTO(48 * 1)
 		eg, egCtx := errgroup.WithContext(ctx)
 		egF := func() interface{} { return eg } // hack to work around go2go bug
 		rvA := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f4))
 		rvB := rdv.XGoEg(egF, rdv.CtxApply(egCtx, f5))
-		fmt.Println(rvA.ReceiveCtx(ctx))
-		fmt.Println(rvB.ReceiveCtx(ctx))
+		fmt.Println(rvA.ReceiveWatch(ctx))
+		fmt.Println(rvB.ReceiveWatch(ctx))
 	}()
 }

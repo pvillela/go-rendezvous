@@ -1,7 +1,8 @@
 // Package rdv supports the safe and convenient execution of asynchronous computations with
 // goroutines and provides facilites for the safe retrieval of the computation results.
 // It provides safety in the sense that panics in asynchronous computations are transformed
-// into error results and methods and functions prevent resource leaks.
+// into error results and its methods and functions prevent resource leaks, race conditions,
+// and deadlocks for the channels used to pass data between the main and child goroutines.
 package rdv
 
 import (
@@ -29,7 +30,7 @@ type Rdv[T any] struct {
 
 // Receive waits on the receiver and returns the results of the asynchronous computation for
 // which the receiver was created (see Go and GoEg).
-// For this method and ReceiveCtx, altogether at most one invocation is allowed for a given
+// For this method and ReceiveWatch, altogether at most one invocation is allowed for a given
 // receiver.
 func (rv Rdv[T]) Receive() (T, error) {
 	data := <-rv.ch
@@ -39,13 +40,13 @@ func (rv Rdv[T]) Receive() (T, error) {
 	return data.value, data.err
 }
 
-// ReceiveCtx waits on the receiver and watches the context ctx for cancellation or timeout.
+// ReceiveWatch waits on the receiver and watches the context ctx for cancellation or timeout.
 // If ctx is not cancelled or times-out, this function returns the results of the asynchronous
 // computation for which the receiver was created (see Go and GoEg).
 // Otherwise, this function returns early with a TimeoutError or CancellationError.
 // For this method and Receive, altogether at most one invocation is allowed for a given
 // receiver.
-func (rv Rdv[T]) ReceiveCtx(ctx context.Context) (T, error) {
+func (rv Rdv[T]) ReceiveWatch(ctx context.Context) (T, error) {
 	data := rdvData[T]{}
 	select {
 	case data = <-rv.ch:
@@ -102,5 +103,20 @@ func CtxApply[T any](
 ) func() (T, error) {
 	return func() (T, error) {
 		return f(ctx)
+	}
+}
+
+// CtxApplyWatch partially applies the ctx argument to return a nulladic function and watches
+// ctx for deadline expiration or cancellation.
+// If ctx is not cancelled or times-out, the resulting function returns the results of f.
+// Otherwise, the resulting function returns early with a TimeoutError or CancellationError.
+func CtxApplyWatch[T any](
+	ctx context.Context,
+	f func(context.Context) (T, error),
+) func() (T, error) {
+	fc := CtxApply(ctx, f)
+	return func() (T, error) {
+		rv := Go(fc)
+		return rv.ReceiveWatch(ctx)
 	}
 }
