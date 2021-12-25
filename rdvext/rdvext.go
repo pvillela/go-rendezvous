@@ -4,6 +4,7 @@
  * that can be found in the LICENSE file.
  */
 
+// Simple extensions to rdv package to support running groups of functions concurrently.
 package rdvext
 
 import (
@@ -13,14 +14,6 @@ import (
 	"github.com/pvillela/go-rendezvous/util"
 	"golang.org/x/sync/errgroup"
 )
-
-// !!!!!!
-// Hack to work around go2go bug that prevents pointer argument to be passed across file
-// boundaries.
-func rdvextGoEg[T any](eg *errgroup.Group, f func() (T, error)) rdv.Rdv[T] {
-	egF := func() interface{} { return eg }
-	return rdv.XGoEg(egF, f)
-}
 
 /////////////////////
 // ResultWithError
@@ -112,7 +105,7 @@ func RunSliceEg[T any](
 	eg, egCtx := errgroup.WithContext(ctx)
 	rvs := make([]rdv.Rdv[T], len(funcs))
 	for i, f := range funcs {
-		rvs[i] = rdvextGoEg(eg, rdv.CtxApplyWatch(egCtx, f))
+		rvs[i] = rdv.GoEg(eg, rdv.CtxApplyWatch(egCtx, f))
 	}
 
 	err := eg.Wait()
@@ -140,8 +133,8 @@ func Run2Eg[T1, T2 any](
 	f2 func(context.Context) (T2, error),
 ) (util.Tuple2[T1, T2], error) {
 	eg, egCtx := errgroup.WithContext(ctx)
-	rv1 := rdvextGoEg(eg, rdv.CtxApplyWatch(egCtx, f1))
-	rv2 := rdvextGoEg(eg, rdv.CtxApplyWatch(egCtx, f2))
+	rv1 := rdv.GoEg(eg, rdv.CtxApplyWatch(egCtx, f1))
+	rv2 := rdv.GoEg(eg, rdv.CtxApplyWatch(egCtx, f2))
 
 	results := util.Tuple2[T1, T2]{}
 

@@ -4,6 +4,11 @@
  * that can be found in the LICENSE file.
  */
 
+// Package rdv supports the safe and convenient execution of asynchronous computations with
+// goroutines and provides facilities for the safe retrieval of the computation results.
+// It provides safety in the sense that panics in asynchronous computations are transformed
+// into error results and its methods and functions prevent resource leaks, race conditions,
+// and deadlocks for the channels used to pass data between the parent and child goroutines.
 package rdv
 
 import (
@@ -88,13 +93,6 @@ func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
 		return err
 	})
 	return rv
-}
-
-// !!!!!!
-// Hack to work around go2go bug that prevents pointer argument to be passed across file
-// boundaries.
-func XGoEg[T any](egF func() interface{}, f func() (T, error)) Rdv[T] {
-	return GoEg(egF().(*errgroup.Group), f)
 }
 
 // CtxApply partially applies the ctx argument to return a nulladic function.
