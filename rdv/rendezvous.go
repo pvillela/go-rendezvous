@@ -95,7 +95,7 @@ func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
 	return rv
 }
 
-// CtxApply partially applies the ctx argument to return a nulladic function.
+// CtxApply closes function f over the ctx argument to return a nulladic function.
 func CtxApply[T any](
 	ctx context.Context,
 	f func(context.Context) (T, error),
@@ -105,7 +105,7 @@ func CtxApply[T any](
 	}
 }
 
-// CtxApplyWatch partially applies the ctx argument to return a nulladic function and watches
+// CtxApplyWatch closes function f over the ctx argument to return a nulladic function and watches
 // ctx for deadline expiration or cancellation.
 // If ctx is not cancelled or times-out, the resulting function returns the results of f.
 // Otherwise, the resulting function returns early with a TimeoutError or CancellationError.
