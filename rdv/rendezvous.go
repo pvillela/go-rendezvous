@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2021 Paulo Villela. All rights reserved.
- *  Use of this source code is governed by the Apache 2.0 license
- *  that can be found in the LICENSE file.
+ * Copyright © 2021 Paulo Villela. All rights reserved.
+ * Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the LICENSE file.
  */
 
 // Package rdv supports the safe and convenient execution of asynchronous computations with
@@ -9,11 +9,12 @@
 // It provides safety in the sense that panics in asynchronous computations are transformed
 // into error results and its methods and functions prevent resource leaks, race conditions,
 // and deadlocks for the channels used to pass data between the parent and child goroutines.
-package rendezvous
+package rdv
 
 import (
 	"context"
 
+	"github.com/pvillela/go-rendezvous/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -70,7 +71,7 @@ func Go[T any](f func() (T, error)) Rdv[T] {
 	rv := Rdv[T]{make(chan rdvData[T], 1)}
 	go func() {
 		defer close(rv.ch)
-		fs := SafeFunc0E(f)
+		fs := util.SafeFunc0E(f)
 		res, err := fs()
 		data := rdvData[T]{res, err, true}
 		rv.ch <- data
@@ -85,7 +86,7 @@ func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
 	rv := Rdv[T]{make(chan rdvData[T], 1)}
 	eg.Go(func() error {
 		defer close(rv.ch)
-		fs := SafeFunc0E(f)
+		fs := util.SafeFunc0E(f)
 		res, err := fs()
 		data := rdvData[T]{res, err, true}
 		rv.ch <- data
