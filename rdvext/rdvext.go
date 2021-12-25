@@ -9,8 +9,8 @@ package rdvext
 
 import (
 	"context"
+	"github.com/pvillela/go-rendezvous"
 
-	"github.com/pvillela/go-rendezvous/rdv"
 	"github.com/pvillela/go-rendezvous/util"
 	"golang.org/x/sync/errgroup"
 )
@@ -39,9 +39,9 @@ func RunSlice[T any](
 	ctx context.Context,
 	funcs ...func(context.Context) (T, error),
 ) ([]ResultWithError[T], error) {
-	rvs := make([]rdv.Rdv[T], len(funcs))
+	rvs := make([]rendezvous.Rdv[T], len(funcs))
 	for i, f := range funcs {
-		rvs[i] = rdv.Go(rdv.CtxApply(ctx, f))
+		rvs[i] = rendezvous.Go(rendezvous.CtxApply(ctx, f))
 	}
 
 	results := make([]ResultWithError[T], len(funcs))
@@ -73,8 +73,8 @@ func Run2[T1, T2 any](
 	f1 func(context.Context) (T1, error),
 	f2 func(context.Context) (T2, error),
 ) (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
-	rv1 := rdv.Go(rdv.CtxApply(ctx, f1))
-	rv2 := rdv.Go(rdv.CtxApply(ctx, f2))
+	rv1 := rendezvous.Go(rendezvous.CtxApply(ctx, f1))
+	rv2 := rendezvous.Go(rendezvous.CtxApply(ctx, f2))
 
 	results := util.Tuple2[ResultWithError[T1], ResultWithError[T2]]{}
 	results.X1.Value, results.X1.Error = rv1.ReceiveWatch(ctx)
@@ -103,9 +103,9 @@ func RunSliceEg[T any](
 	funcs ...func(context.Context) (T, error),
 ) ([]T, error) {
 	eg, egCtx := errgroup.WithContext(ctx)
-	rvs := make([]rdv.Rdv[T], len(funcs))
+	rvs := make([]rendezvous.Rdv[T], len(funcs))
 	for i, f := range funcs {
-		rvs[i] = rdv.GoEg(eg, rdv.CtxApplyWatch(egCtx, f))
+		rvs[i] = rendezvous.GoEg(eg, rendezvous.CtxApplyWatch(egCtx, f))
 	}
 
 	err := eg.Wait()
@@ -133,8 +133,8 @@ func Run2Eg[T1, T2 any](
 	f2 func(context.Context) (T2, error),
 ) (util.Tuple2[T1, T2], error) {
 	eg, egCtx := errgroup.WithContext(ctx)
-	rv1 := rdv.GoEg(eg, rdv.CtxApplyWatch(egCtx, f1))
-	rv2 := rdv.GoEg(eg, rdv.CtxApplyWatch(egCtx, f2))
+	rv1 := rendezvous.GoEg(eg, rendezvous.CtxApplyWatch(egCtx, f1))
+	rv2 := rendezvous.GoEg(eg, rendezvous.CtxApplyWatch(egCtx, f2))
 
 	results := util.Tuple2[T1, T2]{}
 
@@ -162,11 +162,11 @@ func Run2Eg[T1, T2 any](
 func GoSlice[T any](
 	ctx context.Context,
 	funcs ...func(ctx context.Context) (T, error),
-) rdv.Rdv[[]ResultWithError[T]] {
+) rendezvous.Rdv[[]ResultWithError[T]] {
 	f := func() ([]ResultWithError[T], error) {
 		return RunSlice[T](ctx, funcs...)
 	}
-	return rdv.Go(f)
+	return rendezvous.Go(f)
 }
 
 // Go2 returns an rdv.Rdv for the concurrent execution of the functions f1 and f2.
@@ -179,11 +179,11 @@ func Go2[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
 	f2 func(ctx context.Context) (T2, error),
-) rdv.Rdv[util.Tuple2[ResultWithError[T1], ResultWithError[T2]]] {
+) rendezvous.Rdv[util.Tuple2[ResultWithError[T1], ResultWithError[T2]]] {
 	f := func() (util.Tuple2[ResultWithError[T1], ResultWithError[T2]], error) {
 		return Run2[T1, T2](ctx, f1, f2)
 	}
-	return rdv.Go(f)
+	return rendezvous.Go(f)
 }
 
 // GoSliceEg returns an rdv.Rdv for the concurrent execution of the functions funcs
@@ -197,11 +197,11 @@ func Go2[T1 any, T2 any](
 func GoSliceEg[T any](
 	ctx context.Context,
 	funcs ...func(ctx context.Context) (T, error),
-) rdv.Rdv[[]T] {
+) rendezvous.Rdv[[]T] {
 	f := func() ([]T, error) {
 		return RunSliceEg[T](ctx, funcs...)
 	}
-	return rdv.Go(f)
+	return rendezvous.Go(f)
 }
 
 // Go2Eg returns an rdv.Rdv for the concurrent execution of the functions f1 and f2
@@ -216,9 +216,9 @@ func Go2Eg[T1 any, T2 any](
 	ctx context.Context,
 	f1 func(ctx context.Context) (T1, error),
 	f2 func(ctx context.Context) (T2, error),
-) rdv.Rdv[util.Tuple2[T1, T2]] {
+) rendezvous.Rdv[util.Tuple2[T1, T2]] {
 	f := func() (util.Tuple2[T1, T2], error) {
 		return Run2Eg[T1, T2](ctx, f1, f2)
 	}
-	return rdv.Go(f)
+	return rendezvous.Go(f)
 }

@@ -10,9 +10,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/pvillela/go-rendezvous"
 	"time"
 
-	"github.com/pvillela/go-rendezvous/rdv"
 	"github.com/pvillela/go-rendezvous/rdvext"
 	"github.com/pvillela/go-rendezvous/util"
 )
@@ -94,19 +94,19 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** Async 1")
-		rv := rdv.Go(rdv.CtxApply(toCtx(49), f1))
+		rv := rendezvous.Go(rendezvous.CtxApply(toCtx(49), f1))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async 2")
-		rv := rdv.Go(rdv.CtxApply(toCtx(49), f2))
+		rv := rendezvous.Go(rendezvous.CtxApply(toCtx(49), f2))
 		fmt.Println(rv.Receive())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async 3")
-		rv := rdv.Go(rdv.CtxApply(toCtx(49), f3))
+		rv := rendezvous.Go(rendezvous.CtxApply(toCtx(49), f3))
 		fmt.Println(rv.Receive())
 	}()
 
