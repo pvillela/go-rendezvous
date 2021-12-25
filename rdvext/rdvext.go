@@ -4,7 +4,6 @@
  * that can be found in the LICENSE file.
  */
 
-// Simple extensions to rdv package to support running groups of functions concurrently.
 package rdvext
 
 import (
