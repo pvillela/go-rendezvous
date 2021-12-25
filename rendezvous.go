@@ -14,7 +14,6 @@ package rendezvous
 import (
 	"context"
 
-	"github.com/pvillela/go-rendezvous/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -71,7 +70,7 @@ func Go[T any](f func() (T, error)) Rdv[T] {
 	rv := Rdv[T]{make(chan rdvData[T], 1)}
 	go func() {
 		defer close(rv.ch)
-		fs := util.SafeFunc0E(f)
+		fs := SafeFunc0E(f)
 		res, err := fs()
 		data := rdvData[T]{res, err, true}
 		rv.ch <- data
@@ -86,7 +85,7 @@ func GoEg[T any](eg *errgroup.Group, f func() (T, error)) Rdv[T] {
 	rv := Rdv[T]{make(chan rdvData[T], 1)}
 	eg.Go(func() error {
 		defer close(rv.ch)
-		fs := util.SafeFunc0E(f)
+		fs := SafeFunc0E(f)
 		res, err := fs()
 		data := rdvData[T]{res, err, true}
 		rv.ch <- data
