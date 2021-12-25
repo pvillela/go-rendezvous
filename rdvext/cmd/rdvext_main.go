@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pvillela/go-trygo2/rdv"
-	"github.com/pvillela/go-trygo2/rdvext"
-	"github.com/pvillela/go-trygo2/util"
+	"github.com/pvillela/go-rendezvous/rdv"
+	"github.com/pvillela/go-rendezvous/rdvext"
+	"github.com/pvillela/go-rendezvous/util"
 )
 
 func f1(_ context.Context) (int, error) {

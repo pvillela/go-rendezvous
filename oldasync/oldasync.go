@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/pvillela/go-trygo2/util"
+	"github.com/pvillela/go-rendezvous/util"
 	"golang.org/x/sync/errgroup"
 )
 

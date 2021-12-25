@@ -10,8 +10,8 @@ package rdvext
 import (
 	"context"
 
-	"github.com/pvillela/go-trygo2/rdv"
-	"github.com/pvillela/go-trygo2/util"
+	"github.com/pvillela/go-rendezvous/rdv"
+	"github.com/pvillela/go-rendezvous/util"
 	"golang.org/x/sync/errgroup"
 )
 

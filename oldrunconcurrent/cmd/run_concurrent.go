@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pvillela/go-trygo2/oldasync"
+	"github.com/pvillela/go-rendezvous/oldasync"
 )
 
 func f1(context.Context) (int, error) {

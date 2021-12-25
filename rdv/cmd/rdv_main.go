@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pvillela/go-trygo2/rdv"
+	"github.com/pvillela/go-rendezvous/rdv"
 	"golang.org/x/sync/errgroup"
 )
 

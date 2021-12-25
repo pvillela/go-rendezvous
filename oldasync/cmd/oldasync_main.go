@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pvillela/go-trygo2/oldasync"
-	"github.com/pvillela/go-trygo2/util"
+	"github.com/pvillela/go-rendezvous/oldasync"
+	"github.com/pvillela/go-rendezvous/util"
 )
 
 func f1(_ context.Context) (int, error) {
