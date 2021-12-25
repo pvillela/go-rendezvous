@@ -1,7 +1,7 @@
 /*
- * Copyright © 2021 Paulo Villela. All rights reserved.
- * Use of this source code is governed by the Apache 2.0 license
- * that can be found in the LICENSE file.
+ *  Copyright © 2021 Paulo Villela. All rights reserved.
+ *  Use of this source code is governed by the Apache 2.0 license
+ *  that can be found in the LICENSE file.
  */
 
 package main
@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pvillela/go-rendezvous/oldasync"
+	"github.com/pvillela/go-rendezvous/obsolete"
 )
 
 func f1(context.Context) (int, error) {
@@ -50,54 +50,54 @@ func main() {
 	ctx := context.Background()
 
 	fmt.Println("*** RunConcurrentsWg 1234")
-	resultsWg, err := oldasync.RunConcurrentsWg(ctx, f1, f2, f3, f4)
+	resultsWg, err := obsolete.RunConcurrentsWg(ctx, f1, f2, f3, f4)
 	fmt.Println(resultsWg, err)
 
 	fmt.Println("*** RunConcurrentsEg 1234")
-	resultsEg, err := oldasync.RunConcurrentsEg(ctx, f1, f2, f3, f4)
+	resultsEg, err := obsolete.RunConcurrentsEg(ctx, f1, f2, f3, f4)
 	fmt.Println(resultsEg, err)
 
 	fmt.Println("*** RunConcurrentsEg 124")
-	resultsEg, err = oldasync.RunConcurrentsEg(ctx, f1, f2, f4)
+	resultsEg, err = obsolete.RunConcurrentsEg(ctx, f1, f2, f4)
 	fmt.Println(resultsEg, err)
 
 	fmt.Println("*** RunConcurrentsEg 134")
-	resultsEg, err = oldasync.RunConcurrentsEg(ctx, f1, f3, f4)
+	resultsEg, err = obsolete.RunConcurrentsEg(ctx, f1, f3, f4)
 	fmt.Println(resultsEg, err)
 
 	fmt.Println("*** RunConcurrentsEg 14")
-	resultsEg, err = oldasync.RunConcurrentsEg(ctx, f1, f4)
+	resultsEg, err = obsolete.RunConcurrentsEg(ctx, f1, f4)
 	fmt.Println(resultsEg, err)
 
 	fmt.Println("*** RunConcurrent2Wg 12")
-	result2Wg, err := oldasync.RunConcurrent2Wg(ctx, f1, f2)
+	result2Wg, err := obsolete.RunConcurrent2Wg(ctx, f1, f2)
 	fmt.Println(result2Wg, err)
 
 	fmt.Println("*** RunConcurrent2Wg 13")
-	result2Wg, err = oldasync.RunConcurrent2Wg(ctx, f1, f3)
+	result2Wg, err = obsolete.RunConcurrent2Wg(ctx, f1, f3)
 	fmt.Println(result2Wg, err)
 
 	fmt.Println("*** RunConcurrent2Wg 14")
-	result2Wg, err = oldasync.RunConcurrent2Wg(ctx, f1, f4)
+	result2Wg, err = obsolete.RunConcurrent2Wg(ctx, f1, f4)
 	fmt.Println(result2Wg, err)
 
 	fmt.Println("*** RunConcurrent2Eg 12")
-	result2Eg, err := oldasync.RunConcurrent2Eg(ctx, f1, f2)
+	result2Eg, err := obsolete.RunConcurrent2Eg(ctx, f1, f2)
 	fmt.Println(result2Eg, err)
 
 	fmt.Println("*** RunConcurrent2Eg 13")
-	result2Eg, err = oldasync.RunConcurrent2Eg(ctx, f1, f3)
+	result2Eg, err = obsolete.RunConcurrent2Eg(ctx, f1, f3)
 	fmt.Println(result2Eg, err)
 
 	fmt.Println("*** RunConcurrent2Eg 14")
-	result2Eg, err = oldasync.RunConcurrent2Eg(ctx, f1, f4)
+	result2Eg, err = obsolete.RunConcurrent2Eg(ctx, f1, f4)
 	fmt.Println(result2Eg, err)
 
 	fmt.Println("*** RunConcurrent2Eg 24")
-	result2Eg, err = oldasync.RunConcurrent2Eg(ctx, f2, f4)
+	result2Eg, err = obsolete.RunConcurrent2Eg(ctx, f2, f4)
 	fmt.Println(result2Eg, err)
 
 	fmt.Println("*** RunConcurrent2Eg 43")
-	result2Eg, err = oldasync.RunConcurrent2Eg(ctx, f4, f3)
+	result2Eg, err = obsolete.RunConcurrent2Eg(ctx, f4, f3)
 	fmt.Println(result2Eg, err)
 }

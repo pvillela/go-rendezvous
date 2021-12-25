@@ -1,7 +1,7 @@
 /*
- * Copyright © 2021 Paulo Villela. All rights reserved.
- * Use of this source code is governed by the Apache 2.0 license
- * that can be found in the LICENSE file.
+ *  Copyright © 2021 Paulo Villela. All rights reserved.
+ *  Use of this source code is governed by the Apache 2.0 license
+ *  that can be found in the LICENSE file.
  */
 
 package main
@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pvillela/go-rendezvous/oldasync"
+	"github.com/pvillela/go-rendezvous/obsolete"
 	"github.com/pvillela/go-rendezvous/util"
 )
 
@@ -93,121 +93,121 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** Async 1")
-		promise := oldasync.Async(toCtx(49), f1)
+		promise := obsolete.Async(toCtx(49), f1)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async 2")
-		promise := oldasync.Async(toCtx(49), f2)
+		promise := obsolete.Async(toCtx(49), f2)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async 3")
-		promise := oldasync.Async(toCtx(49), f3)
+		promise := obsolete.Async(toCtx(49), f3)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Eg 12")
-		promise := oldasync.Async2Eg(toCtx(49), f1, f2)
+		promise := obsolete.Async2Eg(toCtx(49), f1, f2)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Eg 14")
-		promise := oldasync.Async2Eg(toCtx(49), f1, f4)
+		promise := obsolete.Async2Eg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Eg 15")
-		promise := oldasync.Async2Eg(toCtx(49), f1, f5)
+		promise := obsolete.Async2Eg(toCtx(49), f1, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 1234")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f2, f3, f4)
+		promise := obsolete.AsyncsEg(toCtx(49), f1, f2, f3, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 12345")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5)
+		promise := obsolete.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 123456")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5, f6)
+		promise := obsolete.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5, f6)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 14")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f4)
+		promise := obsolete.AsyncsEg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 24")
-		promise := oldasync.AsyncsEg(toCtx(49), f2, f4)
+		promise := obsolete.AsyncsEg(toCtx(49), f2, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 145")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f4, f5)
+		promise := obsolete.AsyncsEg(toCtx(49), f1, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Wg 12")
-		promise := oldasync.Async2Wg(toCtx(49), f1, f2)
+		promise := obsolete.Async2Wg(toCtx(49), f1, f2)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Wg 14")
-		promise := oldasync.Async2Wg(toCtx(49), f1, f4)
+		promise := obsolete.Async2Wg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Wg 15")
-		promise := oldasync.Async2Wg(toCtx(49), f1, f5)
+		promise := obsolete.Async2Wg(toCtx(49), f1, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 1234")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f2, f3, f4)
+		promise := obsolete.AsyncsWg(toCtx(49), f1, f2, f3, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 12345")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f2, f3, f4, f5)
+		promise := obsolete.AsyncsWg(toCtx(49), f1, f2, f3, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 14")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f4)
+		promise := obsolete.AsyncsWg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 24")
-		promise := oldasync.AsyncsWg(toCtx(49), f2, f4)
+		promise := obsolete.AsyncsWg(toCtx(49), f2, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 145")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f4, f5)
+		promise := obsolete.AsyncsWg(toCtx(49), f1, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 }
