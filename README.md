@@ -7,6 +7,9 @@ It provides safety in the sense that panics in asynchronous computations are tra
 
 This library uses Golang generics introduced in Go v1.18.  go1.18beta1 or higher must be used with this library.
 
-## Documentation
+## Documentation summary
 
-Run godoc at the root directory to browse the package documentation.
+- The main package is **`rdv`**.  **`rdvext`** provides some extensions to `rdv`.
+- See the `example` directories for examples of usage of the library.
+- The `obsolete` directory contains an older and significantly more complex version of the library.
+- Run godoc at the root directory to browse the package documentation.
