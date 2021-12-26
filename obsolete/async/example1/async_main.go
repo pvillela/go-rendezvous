@@ -10,9 +10,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/pvillela/go-rendezvous/obsolete/async"
 	"time"
 
-	"github.com/pvillela/go-rendezvous/oldasync"
 	"github.com/pvillela/go-rendezvous/util"
 )
 
@@ -93,121 +93,121 @@ func main() {
 
 	func() {
 		fmt.Println("\n*** Async 1")
-		promise := oldasync.Async(toCtx(49), f1)
+		promise := async.Async(toCtx(49), f1)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async 2")
-		promise := oldasync.Async(toCtx(49), f2)
+		promise := async.Async(toCtx(49), f2)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async 3")
-		promise := oldasync.Async(toCtx(49), f3)
+		promise := async.Async(toCtx(49), f3)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Eg 12")
-		promise := oldasync.Async2Eg(toCtx(49), f1, f2)
+		promise := async.Async2Eg(toCtx(49), f1, f2)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Eg 14")
-		promise := oldasync.Async2Eg(toCtx(49), f1, f4)
+		promise := async.Async2Eg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Eg 15")
-		promise := oldasync.Async2Eg(toCtx(49), f1, f5)
+		promise := async.Async2Eg(toCtx(49), f1, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 1234")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f2, f3, f4)
+		promise := async.AsyncsEg(toCtx(49), f1, f2, f3, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 12345")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5)
+		promise := async.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 123456")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5, f6)
+		promise := async.AsyncsEg(toCtx(49), f1, f2, f3, f4, f5, f6)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 14")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f4)
+		promise := async.AsyncsEg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 24")
-		promise := oldasync.AsyncsEg(toCtx(49), f2, f4)
+		promise := async.AsyncsEg(toCtx(49), f2, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsEg 145")
-		promise := oldasync.AsyncsEg(toCtx(49), f1, f4, f5)
+		promise := async.AsyncsEg(toCtx(49), f1, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Wg 12")
-		promise := oldasync.Async2Wg(toCtx(49), f1, f2)
+		promise := async.Async2Wg(toCtx(49), f1, f2)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Wg 14")
-		promise := oldasync.Async2Wg(toCtx(49), f1, f4)
+		promise := async.Async2Wg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** Async2Wg 15")
-		promise := oldasync.Async2Wg(toCtx(49), f1, f5)
+		promise := async.Async2Wg(toCtx(49), f1, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 1234")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f2, f3, f4)
+		promise := async.AsyncsWg(toCtx(49), f1, f2, f3, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 12345")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f2, f3, f4, f5)
+		promise := async.AsyncsWg(toCtx(49), f1, f2, f3, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 14")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f4)
+		promise := async.AsyncsWg(toCtx(49), f1, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 24")
-		promise := oldasync.AsyncsWg(toCtx(49), f2, f4)
+		promise := async.AsyncsWg(toCtx(49), f2, f4)
 		fmt.Println(promise.Await())
 	}()
 
 	func() {
 		fmt.Println("\n*** AsyncsWg 145")
-		promise := oldasync.AsyncsWg(toCtx(49), f1, f4, f5)
+		promise := async.AsyncsWg(toCtx(49), f1, f4, f5)
 		fmt.Println(promise.Await())
 	}()
 }
